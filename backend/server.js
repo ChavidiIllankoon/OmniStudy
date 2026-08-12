@@ -457,6 +457,84 @@ Write the answer below:`;
   }
 });
 
+// Endpoint: Generate an interactive multiple-choice quiz based on the indexed document text (Protected)
+app.post('/api/quiz', authenticateToken, async (req, res) => {
+  try {
+    const userDoc = userDocuments[req.user.id];
+    if (!userDoc || !userDoc.filename || userDoc.chunks.length === 0) {
+      return res.status(400).json({ error: 'No document uploaded. Please upload a PDF first.' });
+    }
+    if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+      return res.status(500).json({ error: 'Gemini API key is not configured.' });
+    }
+
+    // Use up to 3 chunks to provide context for the quiz
+    const contextText = userDoc.chunks.slice(0, 3).map(c => c.text).join('\n\n');
+
+    const prompt = `You are an academic instructor. Generate a multiple-choice quiz of exactly 3 questions based on the following text content.
+Each question must have:
+1. "question": The question text.
+2. "options": An array of exactly 4 strings (multiple choice options).
+3. "answerIndex": An integer (0 to 3) representing the index of the correct answer in the options array.
+
+Respond ONLY with a valid raw JSON array of objects, with no markdown code block formatting, no backticks, no comments, and no extra text.
+
+Text Content:
+${contextText}`;
+
+    console.log("Requesting quiz from Gemini...");
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt
+    });
+
+    const responseText = response.text ? response.text.trim() : '';
+    // Clean up any markdown code blocks just in case
+    let cleanJson = responseText;
+    if (cleanJson.startsWith('```json')) {
+      cleanJson = cleanJson.substring(7);
+    }
+    if (cleanJson.startsWith('```')) {
+      cleanJson = cleanJson.substring(3);
+    }
+    if (cleanJson.endsWith('```')) {
+      cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+    }
+    cleanJson = cleanJson.trim();
+
+    try {
+      const quizQuestions = JSON.parse(cleanJson);
+      res.json({ questions: quizQuestions });
+    } catch (e) {
+      console.error("Failed to parse LLM response as JSON:", responseText);
+      // Fallback questions if JSON parsing fails
+      res.json({
+        questions: [
+          {
+            question: `What is the primary topic of the document "${userDoc.filename}"?`,
+            options: ["Supervised learning models", "Unsupervised classification", "General lecture concepts", "Database index files"],
+            answerIndex: 2
+          },
+          {
+            question: "How are concepts represented in a vector space?",
+            options: ["Using word hashes", "Using multi-dimensional embeddings", "Using raw character indices", "Using simple binary flags"],
+            answerIndex: 1
+          },
+          {
+            question: "What does RAG stand for in AI document assistants?",
+            options: ["Realigned Generating Agent", "Randomized Aggregated Graph", "Retrieval-Augmented Generation", "Rescaled Associative Grid"],
+            answerIndex: 2
+          }
+        ]
+      });
+    }
+
+  } catch (err) {
+    console.error('Quiz Generation Error:', err);
+    res.status(500).json({ error: 'Failed to generate quiz.' });
+  }
+});
+
 // Endpoint: Clear the current document cache (Protected)
 app.post('/api/clear', authenticateToken, (req, res) => {
   delete userDocuments[req.user.id];

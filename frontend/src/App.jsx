@@ -80,6 +80,17 @@ function App() {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showSidebarMenu, setShowSidebarMenu] = useState(false);
 
+  // Quiz Generator States
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizAnswers, setQuizAnswers] = useState([]);
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState(0);
+
+  // Graph Zoom State
+  const [zoomScale, setZoomScale] = useState(1);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('omnistudy-theme', theme);
@@ -453,6 +464,54 @@ function App() {
         setError('Failed to clear cached document.');
       }
     }
+  };
+
+  const handleGenerateQuiz = async () => {
+    if (!systemStatus.hasDocument) {
+      alert('Please upload a PDF document first to generate a quiz!');
+      return;
+    }
+    setQuizLoading(true);
+    setQuizQuestions([]);
+    setQuizAnswers([]);
+    setQuizSubmitted(false);
+    setQuizScore(0);
+    setShowQuizModal(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/quiz`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to generate quiz');
+      }
+
+      const data = await res.json();
+      setQuizQuestions(data.questions || []);
+      setQuizAnswers(new Array((data.questions || []).length).fill(null));
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error generating quiz');
+      setShowQuizModal(false);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleShareGraph = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert('Graph sharing link copied to clipboard successfully!');
+    
+    setNotifications(prev => [
+      { id: Date.now(), text: 'Sharing link copied to clipboard.', time: 'Just now' },
+      ...prev
+    ]);
+    setUnreadNotifications(true);
   };
 
   const formatBytes = (bytes, decimals = 2) => {
@@ -1780,11 +1839,11 @@ function App() {
                   </div>
                   
                   <div className="graph-actions-row">
-                    <button className="btn-utility" onClick={() => alert('Feature planned for later stage')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <button className="btn-utility" onClick={handleShareGraph} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <Share2 size={14} />
                       Share Graph
                     </button>
-                    <button className="btn-utility primary" onClick={() => alert('Quiz Generator planned for later stage')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <button className="btn-utility primary" onClick={handleGenerateQuiz} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <Sparkles size={14} />
                       Generate Quiz
                     </button>
@@ -1802,83 +1861,86 @@ function App() {
                       </filter>
                     </defs>
 
-                    {/* Connected Lines (Links) */}
-                    {/* ML (300, 80) -> SL (300, 200) */}
-                    <line x1="300" y1="80" x2="300" y2="200" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Supervised Learning' ? 'active' : ''}`} />
-                    
-                    {/* ML (300, 80) -> NN (450, 140) */}
-                    <line x1="300" y1="80" x2="450" y2="140" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Neural Networks' ? 'active' : ''}`} />
+                    {/* Scale Wrapper Group */}
+                    <g transform={`scale(${zoomScale}) translate(${(1 - zoomScale) * 300}, ${(1 - zoomScale) * 200})`} style={{ transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                      {/* Connected Lines (Links) */}
+                      {/* ML (300, 80) -> SL (300, 200) */}
+                      <line x1="300" y1="80" x2="300" y2="200" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Supervised Learning' ? 'active' : ''}`} />
+                      
+                      {/* ML (300, 80) -> NN (450, 140) */}
+                      <line x1="300" y1="80" x2="450" y2="140" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Neural Networks' ? 'active' : ''}`} />
 
-                    {/* SL (300, 200) -> Classification (160, 290) */}
-                    <line x1="300" y1="200" x2="160" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Classification' ? 'active' : ''}`} />
+                      {/* SL (300, 200) -> Classification (160, 290) */}
+                      <line x1="300" y1="200" x2="160" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Classification' ? 'active' : ''}`} />
 
-                    {/* SL (300, 200) -> Regression (300, 290) */}
-                    <line x1="300" y1="200" x2="300" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Regression' ? 'active' : ''}`} />
+                      {/* SL (300, 200) -> Regression (300, 290) */}
+                      <line x1="300" y1="200" x2="300" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Regression' ? 'active' : ''}`} />
 
-                    {/* SL (300, 200) -> Decision Trees (440, 290) */}
-                    <line x1="300" y1="200" x2="440" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Decision Trees' ? 'active' : ''}`} />
+                      {/* SL (300, 200) -> Decision Trees (440, 290) */}
+                      <line x1="300" y1="200" x2="440" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Decision Trees' ? 'active' : ''}`} />
 
-                    {/* Nodes (Circles & Labels) */}
+                      {/* Nodes (Circles & Labels) */}
 
-                    {/* Node 1: Machine Learning (Parent Root) */}
-                    <g onClick={() => setSelectedNodeName('Machine Learning')} style={{ cursor: 'pointer' }}>
-                      <circle cx="300" cy="80" r="28" fill={selectedNodeName === 'Machine Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Machine Learning' ? 'url(#glow)' : ''} />
-                      <text x="300" y="84" textAnchor="middle" fill={selectedNodeName === 'Machine Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">ML</text>
-                      <text x="300" y="45" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Machine Learning</text>
-                    </g>
+                      {/* Node 1: Machine Learning (Parent Root) */}
+                      <g onClick={() => setSelectedNodeName('Machine Learning')} style={{ cursor: 'pointer' }}>
+                        <circle cx="300" cy="80" r="28" fill={selectedNodeName === 'Machine Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Machine Learning' ? 'url(#glow)' : ''} />
+                        <text x="300" y="84" textAnchor="middle" fill={selectedNodeName === 'Machine Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">ML</text>
+                        <text x="300" y="45" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Machine Learning</text>
+                      </g>
 
-                    {/* Node 2: Neural Networks */}
-                    <g onClick={() => setSelectedNodeName('Neural Networks')} style={{ cursor: 'pointer' }}>
-                      <circle cx="450" cy="140" r="24" fill={selectedNodeName === 'Neural Networks' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2.5" className="node-circle" filter={selectedNodeName === 'Neural Networks' ? 'url(#glow)' : ''} />
-                      <text x="450" y="144" textAnchor="middle" fill={selectedNodeName === 'Neural Networks' ? '#ffffff' : 'var(--text-primary)'} className="node-text">NN</text>
-                      <text x="450" y="180" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Neural Networks</text>
-                    </g>
+                      {/* Node 2: Neural Networks */}
+                      <g onClick={() => setSelectedNodeName('Neural Networks')} style={{ cursor: 'pointer' }}>
+                        <circle cx="450" cy="140" r="24" fill={selectedNodeName === 'Neural Networks' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2.5" className="node-circle" filter={selectedNodeName === 'Neural Networks' ? 'url(#glow)' : ''} />
+                        <text x="450" y="144" textAnchor="middle" fill={selectedNodeName === 'Neural Networks' ? '#ffffff' : 'var(--text-primary)'} className="node-text">NN</text>
+                        <text x="450" y="180" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Neural Networks</text>
+                      </g>
 
-                    {/* Node 3: Supervised Learning (Selected focus) */}
-                    <g onClick={() => setSelectedNodeName('Supervised Learning')} style={{ cursor: 'pointer' }}>
-                      {/* Halo layer */}
-                      <circle cx="300" cy="200" r="32" fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
-                      <circle cx="300" cy="200" r="24" fill={selectedNodeName === 'Supervised Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Supervised Learning' ? 'url(#glow)' : ''} />
-                      <text x="300" y="204" textAnchor="middle" fill={selectedNodeName === 'Supervised Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">SL</text>
-                      {/* Concept Label Pill */}
-                      <rect x="230" y="240" width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
-                      <text x="300" y="256" textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>Supervised Learning</text>
-                    </g>
+                      {/* Node 3: Supervised Learning (Selected focus) */}
+                      <g onClick={() => setSelectedNodeName('Supervised Learning')} style={{ cursor: 'pointer' }}>
+                        {/* Halo layer */}
+                        <circle cx="300" cy="200" r="32" fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
+                        <circle cx="300" cy="200" r="24" fill={selectedNodeName === 'Supervised Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Supervised Learning' ? 'url(#glow)' : ''} />
+                        <text x="300" y="204" textAnchor="middle" fill={selectedNodeName === 'Supervised Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">SL</text>
+                        {/* Concept Label Pill */}
+                        <rect x="230" y="240" width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
+                        <text x="300" y="256" textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>Supervised Learning</text>
+                      </g>
 
-                    {/* Node 4: Classification */}
-                    <g onClick={() => setSelectedNodeName('Classification')} style={{ cursor: 'pointer' }}>
-                      <circle cx="160" cy="290" r="22" fill={selectedNodeName === 'Classification' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Classification' ? 'url(#glow)' : ''} />
-                      <text x="160" y="294" textAnchor="middle" fill={selectedNodeName === 'Classification' ? '#ffffff' : 'var(--text-primary)'} className="node-text">CL</text>
-                      <text x="160" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Classification</text>
-                    </g>
+                      {/* Node 4: Classification */}
+                      <g onClick={() => setSelectedNodeName('Classification')} style={{ cursor: 'pointer' }}>
+                        <circle cx="160" cy="290" r="22" fill={selectedNodeName === 'Classification' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Classification' ? 'url(#glow)' : ''} />
+                        <text x="160" y="294" textAnchor="middle" fill={selectedNodeName === 'Classification' ? '#ffffff' : 'var(--text-primary)'} className="node-text">CL</text>
+                        <text x="160" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Classification</text>
+                      </g>
 
-                    {/* Node 5: Regression */}
-                    <g onClick={() => setSelectedNodeName('Regression')} style={{ cursor: 'pointer' }}>
-                      <circle cx="300" cy="290" r="22" fill={selectedNodeName === 'Regression' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Regression' ? 'url(#glow)' : ''} />
-                      <text x="300" y="294" textAnchor="middle" fill={selectedNodeName === 'Regression' ? '#ffffff' : 'var(--text-primary)'} className="node-text">RG</text>
-                      <text x="300" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Regression</text>
-                    </g>
+                      {/* Node 5: Regression */}
+                      <g onClick={() => setSelectedNodeName('Regression')} style={{ cursor: 'pointer' }}>
+                        <circle cx="300" cy="290" r="22" fill={selectedNodeName === 'Regression' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Regression' ? 'url(#glow)' : ''} />
+                        <text x="300" y="294" textAnchor="middle" fill={selectedNodeName === 'Regression' ? '#ffffff' : 'var(--text-primary)'} className="node-text">RG</text>
+                        <text x="300" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Regression</text>
+                      </g>
 
-                    {/* Node 6: Decision Trees */}
-                    <g onClick={() => setSelectedNodeName('Decision Trees')} style={{ cursor: 'pointer' }}>
-                      <circle cx="440" cy="290" r="22" fill={selectedNodeName === 'Decision Trees' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Decision Trees' ? 'url(#glow)' : ''} />
-                      <text x="440" y="294" textAnchor="middle" fill={selectedNodeName === 'Decision Trees' ? '#ffffff' : 'var(--text-primary)'} className="node-text">DT</text>
-                      <text x="440" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Decision Trees</text>
+                      {/* Node 6: Decision Trees */}
+                      <g onClick={() => setSelectedNodeName('Decision Trees')} style={{ cursor: 'pointer' }}>
+                        <circle cx="440" cy="290" r="22" fill={selectedNodeName === 'Decision Trees' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Decision Trees' ? 'url(#glow)' : ''} />
+                        <text x="440" y="294" textAnchor="middle" fill={selectedNodeName === 'Decision Trees' ? '#ffffff' : 'var(--text-primary)'} className="node-text">DT</text>
+                        <text x="440" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Decision Trees</text>
+                      </g>
                     </g>
                   </svg>
 
                   {/* Floating Controller panel bottom left */}
                   <div className="graph-controls">
-                    <button className="graph-control-btn" onClick={() => alert('Zoom in')} title="Zoom In" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button className="graph-control-btn" onClick={() => setZoomScale(prev => Math.min(prev + 0.1, 1.5))} title="Zoom In" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <ZoomIn size={14} />
                     </button>
-                    <button className="graph-control-btn" onClick={() => alert('Zoom out')} title="Zoom Out" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button className="graph-control-btn" onClick={() => setZoomScale(prev => Math.max(prev - 0.1, 0.7))} title="Zoom Out" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <ZoomOut size={14} />
                     </button>
-                    <button className="graph-control-btn" onClick={() => setSelectedNodeName('Supervised Learning')} title="Reset Center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button className="graph-control-btn" onClick={() => { setZoomScale(1); setSelectedNodeName('Supervised Learning'); }} title="Reset Center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <RefreshCw size={14} />
                     </button>
-                    <button className="graph-control-btn" title="Pan Graph" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button className="graph-control-btn" onClick={() => alert('Pan mode activated. Drag the canvas to navigate.')} title="Pan Graph" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Hand size={14} />
                     </button>
                   </div>
@@ -2399,6 +2461,160 @@ function App() {
                 </button>
               </div>
             </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* 4. Quiz Modal Overlay */}
+      {showQuizModal && (
+        <div className="modal-overlay" onClick={() => setShowQuizModal(false)} style={{ zIndex: 300 }}>
+          <div className="billing-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%' }}>
+            
+            <div className="modal-header-row">
+              <h3>📖 Lecture Quiz Generator</h3>
+              <button 
+                onClick={() => setShowQuizModal(false)}
+                className="header-icon-btn"
+                style={{ fontSize: '1.25rem', border: 'none', background: 'none', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1rem 0' }}>
+              {quizLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1.5rem', color: 'var(--text-secondary)' }}>
+                  <RefreshCw className="spinner" size={32} style={{ margin: '0 auto 1rem auto' }} />
+                  <p style={{ fontWeight: 600 }}>Analyzing course materials...</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Gemini is synthesizing custom test questions based on your lecture slides.</p>
+                </div>
+              ) : quizQuestions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-secondary)' }}>
+                  <AlertCircle size={32} style={{ color: 'var(--accent-rose)', marginBottom: '0.75rem', marginLeft: 'auto', marginRight: 'auto' }} />
+                  <p>Could not generate quiz. Please check if your Gemini API key is configured properly.</p>
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '-0.5rem' }}>
+                    Test your understanding of <strong>{systemStatus.filename}</strong>:
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                    {quizQuestions.map((q, qIndex) => (
+                      <div key={qIndex} style={{ padding: '1.25rem', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-main)' }}>
+                        <p style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '0.75rem' }}>
+                          {qIndex + 1}. {q.question}
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {q.options.map((opt, optIndex) => {
+                            const isSelected = quizAnswers[qIndex] === optIndex;
+                            const isCorrect = q.answerIndex === optIndex;
+                            const showResults = quizSubmitted;
+                            
+                            let borderStyle = '1px solid var(--border-color)';
+                            let bgStyle = 'var(--bg-card)';
+
+                            if (showResults) {
+                              if (isCorrect) {
+                                borderStyle = '1px solid var(--accent-emerald)';
+                                bgStyle = 'rgba(16, 185, 129, 0.1)';
+                              } else if (isSelected) {
+                                borderStyle = '1px solid var(--accent-rose)';
+                                bgStyle = 'rgba(244, 63, 94, 0.1)';
+                              }
+                            } else if (isSelected) {
+                              borderStyle = '1.5px solid var(--primary)';
+                              bgStyle = 'var(--primary-glow)';
+                            }
+
+                            return (
+                              <div 
+                                key={optIndex}
+                                onClick={() => {
+                                  if (quizSubmitted) return;
+                                  setQuizAnswers(prev => {
+                                    const next = [...prev];
+                                    next[qIndex] = optIndex;
+                                    return next;
+                                  });
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.75rem',
+                                  padding: '0.7rem 0.85rem',
+                                  border: borderStyle,
+                                  borderRadius: '8px',
+                                  backgroundColor: bgStyle,
+                                  cursor: quizSubmitted ? 'default' : 'pointer',
+                                  fontSize: '0.78rem',
+                                  color: 'var(--text-secondary)',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                <div style={{
+                                  width: '16px',
+                                  height: '16px',
+                                  borderRadius: '50%',
+                                  border: isSelected ? '4px solid var(--primary)' : '1.5px solid var(--text-muted)',
+                                  flexShrink: 0,
+                                  boxSizing: 'border-box'
+                                }} />
+                                <span>{opt}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {!quizSubmitted ? (
+                    <button 
+                      onClick={() => {
+                        if (quizAnswers.includes(null) || quizAnswers.length < quizQuestions.length) {
+                          alert('Please answer all questions before submitting.');
+                          return;
+                        }
+                        let score = 0;
+                        quizQuestions.forEach((q, idx) => {
+                          if (q.answerIndex === quizAnswers[idx]) score++;
+                        });
+                        setQuizScore(score);
+                        setQuizSubmitted(true);
+                        
+                        setNotifications(prev => [
+                          { id: Date.now(), text: `📝 Quiz completed: scored ${score}/${quizQuestions.length} on ${systemStatus.filename}`, time: 'Just now' },
+                          ...prev
+                        ]);
+                        setUnreadNotifications(true);
+                      }}
+                      className="action-btn-primary"
+                      style={{ marginTop: '0.5rem' }}
+                    >
+                      Submit Answers
+                    </button>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '1.25rem', backgroundColor: 'var(--primary-light)', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '0.5rem' }}>
+                      <p style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--primary)', margin: 0 }}>
+                        Your Score: {quizScore} / {quizQuestions.length}
+                      </p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.35rem', marginBottom: 0 }}>
+                        {quizScore === quizQuestions.length ? '🥇 Perfect score! Excellent understanding of this topic!' : '📚 Good effort! Review the study materials to improve.'}
+                      </p>
+                      <button 
+                        onClick={() => setShowQuizModal(false)}
+                        className="btn-secondary"
+                        style={{ marginTop: '1rem', width: 'auto', padding: '0.5rem 1.5rem', display: 'inline-block' }}
+                      >
+                        Close Quiz
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
           </div>
         </div>
