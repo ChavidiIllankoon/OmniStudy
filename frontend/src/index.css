@@ -1923,6 +1923,14 @@ body {
   text-decoration: underline;
 }
 
+.dropdown-list-item {
+  transition: var(--transition-smooth);
+}
+
+.dropdown-list-item:hover {
+  background-color: var(--bg-main) !important;
+}
+
 .dropdown-list {
   display: flex;
   flex-direction: column;

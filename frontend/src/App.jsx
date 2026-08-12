@@ -73,6 +73,7 @@ function App() {
   const [unreadNotifications, setUnreadNotifications] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [theme, setTheme] = useState(localStorage.getItem('omnistudy-theme') || 'light');
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -811,6 +812,7 @@ function App() {
               onClick={() => {
                 setShowNotifications(!showNotifications);
                 setShowHelp(false);
+                setShowProfileDropdown(false);
                 setUnreadNotifications(false);
               }}
             >
@@ -824,6 +826,7 @@ function App() {
               onClick={() => {
                 setShowHelp(!showHelp);
                 setShowNotifications(false);
+                setShowProfileDropdown(false);
               }}
             >
               <HelpCircle size={18} />
@@ -831,10 +834,79 @@ function App() {
 
             {/* Profile Avatar */}
             {user && (
-              <div className="header-profile">
-                <div className="profile-avatar" title={user.email}>
-                  {user.name.charAt(0)}
+              <div className="header-profile" style={{ position: 'relative' }}>
+                <div 
+                  className="profile-avatar" 
+                  title="Profile Menu"
+                  onClick={() => {
+                    setShowProfileDropdown(!showProfileDropdown);
+                    setShowNotifications(false);
+                    setShowHelp(false);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {user.name.charAt(0).toUpperCase()}
                 </div>
+
+                {showProfileDropdown && (
+                  <div className="floating-dropdown-card" style={{ right: 0, top: '48px', width: '180px', padding: '0' }}>
+                    <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)' }}>
+                      <p style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
+                    </div>
+                    <div style={{ padding: '0.25rem' }}>
+                      <button 
+                        onClick={() => {
+                          setActiveView('settings');
+                          setShowProfileDropdown(false);
+                        }}
+                        className="dropdown-list-item"
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '0.5rem', 
+                          width: '100%', 
+                          padding: '0.55rem 0.75rem', 
+                          fontSize: '0.78rem',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          color: 'var(--text-secondary)'
+                        }}
+                      >
+                        <User size={14} />
+                        Profile Settings
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          handleLogout();
+                          setShowProfileDropdown(false);
+                        }}
+                        className="dropdown-list-item"
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '0.5rem', 
+                          width: '100%', 
+                          padding: '0.55rem 0.75rem', 
+                          fontSize: '0.78rem',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          color: 'var(--accent-rose)'
+                        }}
+                      >
+                        <LogOut size={14} />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
