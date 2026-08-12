@@ -28,7 +28,11 @@ import {
   PlusCircle,
   Info,
   Sun,
-  Moon
+  Moon,
+  Share2,
+  ZoomIn,
+  ZoomOut,
+  Hand
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:5000';
@@ -1776,8 +1780,14 @@ function App() {
                   </div>
                   
                   <div className="graph-actions-row">
-                    <button className="btn-utility" onClick={() => alert('Feature planned for later stage')}>share Share Graph</button>
-                    <button className="btn-utility primary" onClick={() => alert('Quiz Generator planned for later stage')}>magic_button Generate Quiz</button>
+                    <button className="btn-utility" onClick={() => alert('Feature planned for later stage')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Share2 size={14} />
+                      Share Graph
+                    </button>
+                    <button className="btn-utility primary" onClick={() => alert('Quiz Generator planned for later stage')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Sparkles size={14} />
+                      Generate Quiz
+                    </button>
                   </div>
                 </div>
 
@@ -1859,10 +1869,18 @@ function App() {
 
                   {/* Floating Controller panel bottom left */}
                   <div className="graph-controls">
-                    <button className="graph-control-btn" onClick={() => alert('Zoom in')} title="Zoom In">add</button>
-                    <button className="graph-control-btn" onClick={() => alert('Zoom out')} title="Zoom Out">remove</button>
-                    <button className="graph-control-btn" onClick={() => setSelectedNodeName('Supervised Learning')} title="Reset Center">refresh</button>
-                    <button className="graph-control-btn" title="Pan Graph">pan_tool</button>
+                    <button className="graph-control-btn" onClick={() => alert('Zoom in')} title="Zoom In" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ZoomIn size={14} />
+                    </button>
+                    <button className="graph-control-btn" onClick={() => alert('Zoom out')} title="Zoom Out" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ZoomOut size={14} />
+                    </button>
+                    <button className="graph-control-btn" onClick={() => setSelectedNodeName('Supervised Learning')} title="Reset Center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <RefreshCw size={14} />
+                    </button>
+                    <button className="graph-control-btn" title="Pan Graph" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Hand size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
