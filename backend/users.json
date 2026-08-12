@@ -12,5 +12,12 @@
     "email": "tester@omnistudy.edu",
     "password": "$2b$10$SEVqJyefjd3fXlNaKQgaJOY2traBEa5MeP0XwQEIRA4.xxMfh6/su",
     "createdAt": "2026-08-12T07:20:46.915Z"
+  },
+  {
+    "id": "1786548642804",
+    "name": "LangChain Tester",
+    "email": "langtester@omnistudy.edu",
+    "password": "$2b$10$8GW/j9UM4vknnwF9.FapWO4mbf7DxxAugaWBu/XKueqj76dQloht2",
+    "createdAt": "2026-08-12T15:30:42.804Z"
   }
 ]

@@ -4,6 +4,9 @@ const cors = require('cors');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const { GoogleGenAI } = require('@google/genai');
+const { RecursiveCharacterTextSplitter } = require("@langchain/textsplitters");
+const { MemoryVectorStore } = require("@langchain/classic/vectorstores/memory");
+const { ChatGoogleGenerativeAI, GoogleGenAIEmbeddings } = require("@langchain/google-genai");
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
@@ -282,75 +285,76 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
     }));
     console.log(`Extracted text from ${pages.length} pages.`);
 
-    // Perform chunking
-    const rawChunks = chunkText(pages, 600, 150);
-    console.log(`Generated ${rawChunks.length} chunks.`);
+    // Set up LangChain Text Splitter
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 600,
+      chunkOverlap: 150
+    });
 
-    if (rawChunks.length === 0) {
+    const langDocs = [];
+    const plainChunks = [];
+    let chunkId = 0;
+
+    for (const page of pages) {
+      const text = page.text.replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+
+      const pageDocs = await splitter.createDocuments([text]);
+
+      for (const doc of pageDocs) {
+        const chunkObj = {
+          id: `${req.user.id}_chunk_${chunkId++}`,
+          text: doc.pageContent,
+          page: page.pageNumber
+        };
+        
+        langDocs.push({
+          pageContent: chunkObj.text,
+          metadata: {
+            id: chunkObj.id,
+            page: chunkObj.page
+          }
+        });
+        plainChunks.push(chunkObj);
+      }
+    }
+
+    console.log(`Generated ${plainChunks.length} chunks using LangChain Text Splitter.`);
+
+    if (plainChunks.length === 0) {
       return res.status(400).json({ error: 'No text content could be extracted from this PDF.' });
     }
 
-    // Generate embeddings using gemini-embedding-2
-    console.log("Generating embeddings for chunks...");
-    const embeddedChunks = [];
-    
-    const batchSize = 5;
-    for (let i = 0; i < rawChunks.length; i += batchSize) {
-      const batch = rawChunks.slice(i, i + batchSize);
-      const embedPromises = batch.map(async (chunk) => {
-        try {
-          const response = await ai.models.embedContent({
-            model: 'gemini-embedding-2',
-            contents: chunk.text
-          });
-          
-          let vector = null;
-          if (response.embeddings && response.embeddings[0]) {
-            vector = response.embeddings[0].values;
-          } else if (response.embedding && response.embedding.values) {
-            vector = response.embedding.values;
-          }
+    // Generate embeddings and build Memory Vector Store using LangChain wrappers
+    console.log("Generating embeddings and building memory vector store via LangChain...");
+    const embeddings = new GoogleGenAIEmbeddings({
+      apiKey: apiKey,
+      modelName: "text-embedding-004",
+    });
 
-          if (!vector) {
-            throw new Error(`Invalid response structure: ${JSON.stringify(response)}`);
-          }
-
-          return {
-            ...chunk,
-            embedding: vector
-          };
-        } catch (err) {
-          console.error(`Error embedding chunk ${chunk.id}:`, err.message);
-          throw err;
-        }
-      });
-
-      const results = await Promise.all(embedPromises);
-      embeddedChunks.push(...results);
-    }
+    const vectorStore = await MemoryVectorStore.fromDocuments(langDocs, embeddings);
 
     // Save to user-specific document store
     userDocuments[req.user.id] = {
       filename: req.file.originalname,
       fileSize: req.file.size,
-      chunks: embeddedChunks
+      chunks: plainChunks,
+      vectorStore: vectorStore
     };
 
-    console.log("Embedding complete!");
+    console.log("LangChain vector indexing complete!");
     res.json({
       success: true,
       filename: req.file.originalname,
-      chunkCount: embeddedChunks.length,
-      message: 'PDF uploaded, chunked, and embedded successfully.'
+      chunkCount: plainChunks.length,
+      message: 'PDF uploaded, chunked, and embedded successfully using LangChain.'
     });
 
   } catch (error) {
     console.error('Upload Error:', error);
     res.status(500).json({ error: 'Failed to process and embed PDF document.', details: error.message });
   }
-});
-
-// Endpoint: Submit user question, perform vector retrieval, and call LLM (Protected)
+});// Endpoint: Submit user question, perform vector retrieval, and call LLM (Protected)
 app.post('/api/query', authenticateToken, async (req, res) => {
   try {
     const { query } = req.body;
@@ -359,49 +363,30 @@ app.post('/api/query', authenticateToken, async (req, res) => {
     }
 
     const userDoc = userDocuments[req.user.id];
-    if (!userDoc || !userDoc.filename || userDoc.chunks.length === 0) {
+    if (!userDoc || !userDoc.filename || !userDoc.vectorStore) {
       return res.status(400).json({ error: 'No document has been uploaded yet. Please upload a PDF first.' });
     }
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       return res.status(500).json({ error: 'Gemini API key is not configured.' });
     }
 
-    console.log(`Query from ${req.user.name}: "${query}"`);
+    console.log(`Query from ${req.user.name} (via LangChain): "${query}"`);
 
-    // 1. Generate query embedding
-    const queryEmbedResponse = await ai.models.embedContent({
-      model: 'gemini-embedding-2',
-      contents: query
-    });
+    // 1. Retrieve relevant chunks using LangChain similarity search with score
+    const searchResults = await userDoc.vectorStore.similaritySearchWithScore(query, 5);
 
-    let queryVector = null;
-    if (queryEmbedResponse.embeddings && queryEmbedResponse.embeddings[0]) {
-      queryVector = queryEmbedResponse.embeddings[0].values;
-    } else if (queryEmbedResponse.embedding && queryEmbedResponse.embedding.values) {
-      queryVector = queryEmbedResponse.embedding.values;
-    }
-
-    if (!queryVector) {
-      throw new Error("Could not generate embedding for query.");
-    }
-
-    // 2. Compute similarity with user's document chunks
-    const similarityResults = userDoc.chunks.map(chunk => {
-      const score = cosineSimilarity(queryVector, chunk.embedding);
+    // Map distances to scores (MemoryVectorStore uses cosine distance or L2 distance)
+    const relevantChunks = searchResults.map(([doc, distance]) => {
+      const similarity = Math.max(0, Math.min(1, 1 - distance));
       return {
-        id: chunk.id,
-        text: chunk.text,
-        page: chunk.page,
-        similarity: score
+        id: doc.metadata.id,
+        text: doc.pageContent,
+        page: doc.metadata.page,
+        similarity: similarity
       };
-    });
+    }).filter(c => c.similarity > 0.1);
 
-    // 3. Sort by similarity and slice top 5
-    similarityResults.sort((a, b) => b.similarity - a.similarity);
-    const topChunks = similarityResults.slice(0, 5);
-    const relevantChunks = topChunks.filter(c => c.similarity > 0.1);
-    
-    // Construct context representation
+    // 2. Construct context representation
     let contextText = "";
     if (relevantChunks.length > 0) {
       contextText = relevantChunks.map((chunk, index) => {
@@ -411,8 +396,8 @@ app.post('/api/query', authenticateToken, async (req, res) => {
       contextText = "No relevant context found.";
     }
 
-    // 4. Construct RAG Prompt
-    const prompt = `You are OmniStudy AI, an intelligent, helpful university learning assistant.
+    // 3. Construct prompt
+    const chatPrompt = `You are OmniStudy AI, an intelligent, helpful university learning assistant.
 Your goal is to answer the user's question accurately using ONLY the provided lecture document context.
 
 Review this context extracted from the lecture slides or notes:
@@ -432,14 +417,16 @@ User Question: ${query}
 
 Write the answer below:`;
 
-    // 5. Query Gemini
-    console.log("Requesting answer from Gemini...");
-    const chatResponse = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: prompt
+    // 4. Query Gemini Chat Model wrapper in LangChain
+    console.log("Requesting answer from ChatGoogleGenerativeAI (LangChain)...");
+    const chatModel = new ChatGoogleGenerativeAI({
+      apiKey: apiKey,
+      modelName: "gemini-1.5-flash",
+      temperature: 0.2
     });
 
-    const answer = chatResponse.text || "No response received.";
+    const chatResponse = await chatModel.invoke(chatPrompt);
+    const answer = chatResponse.content || "No response received.";
 
     res.json({
       answer: answer.trim(),
@@ -455,9 +442,7 @@ Write the answer below:`;
     console.error('Query Error:', error);
     res.status(500).json({ error: 'Failed to process query and generate answer.', details: error.message });
   }
-});
-
-// Endpoint: Generate an interactive multiple-choice quiz based on the indexed document text (Protected)
+});// Endpoint: Generate an interactive multiple-choice quiz based on the indexed document text (Protected)
 app.post('/api/quiz', authenticateToken, async (req, res) => {
   try {
     const userDoc = userDocuments[req.user.id];
@@ -482,13 +467,15 @@ Respond ONLY with a valid raw JSON array of objects, with no markdown code block
 Text Content:
 ${contextText}`;
 
-    console.log("Requesting quiz from Gemini...");
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt
+    console.log("Requesting quiz from ChatGoogleGenerativeAI (LangChain)...");
+    const chatModel = new ChatGoogleGenerativeAI({
+      apiKey: apiKey,
+      modelName: "gemini-2.5-flash",
+      temperature: 0.3
     });
 
-    const responseText = response.text ? response.text.trim() : '';
+    const response = await chatModel.invoke(prompt);
+    const responseText = response.content ? response.content.trim() : '';
     // Clean up any markdown code blocks just in case
     let cleanJson = responseText;
     if (cleanJson.startsWith('```json')) {
@@ -533,9 +520,7 @@ ${contextText}`;
     console.error('Quiz Generation Error:', err);
     res.status(500).json({ error: 'Failed to generate quiz.' });
   }
-});
-
-// Endpoint: Clear the current document cache (Protected)
+});// Endpoint: Clear the current document cache (Protected)
 app.post('/api/clear', authenticateToken, (req, res) => {
   delete userDocuments[req.user.id];
   console.log(`Document memory cleared for user: ${req.user.name}`);

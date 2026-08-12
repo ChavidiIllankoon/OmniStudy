@@ -2524,9 +2524,7 @@ body {
   color: var(--text-secondary);
 }
 
-/* ==========================================================================
-   SIDEBAR ACCOUNT POPOVER MENU
-   ========================================================================== */
+/*SIDEBAR ACCOUNT POPOVER MENU*/
 .sidebar-popover {
   position: absolute;
   bottom: 80px;
@@ -2545,8 +2543,15 @@ body {
 }
 
 @keyframes slideUpFade {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .popover-user-row {

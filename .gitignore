@@ -30,9 +30,19 @@ yarn-error.log*
 
 # IDE files
 .vscode/
+!.vscode/extensions.json
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Project-specific logs and build outputs
+logs/
+**/logs/
+dist-ssr/
+**/dist-ssr/
+pnpm-debug.log*
+lerna-debug.log*
+*.local
