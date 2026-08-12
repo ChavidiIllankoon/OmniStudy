@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1786518167570",
+    "name": "Chavidi",
+    "email": "chavidi5635@gmail.com",
+    "password": "$2b$10$4HEZCR6kGNVRwOMDuy.EEuiGOjbQ9xU.YGkA0RbN1TmP58cDw8XZ6",
+    "createdAt": "2026-08-12T07:02:47.570Z"
+  },
+  {
+    "id": "1786519246915",
+    "name": "Tester",
+    "email": "tester@omnistudy.edu",
+    "password": "$2b$10$SEVqJyefjd3fXlNaKQgaJOY2traBEa5MeP0XwQEIRA4.xxMfh6/su",
+    "createdAt": "2026-08-12T07:20:46.915Z"
+  }
+]
