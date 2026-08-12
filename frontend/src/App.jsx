@@ -949,7 +949,7 @@ function App() {
                   </div>
                 ) : (
                   /* Active Document Info Card */
-                  <div className="upload-promo-card" style={{ border: '1px solid rgba(16, 185, 129, 0.25)', background: '#f0fdf4', padding: '2rem' }}>
+                  <div className="upload-promo-card" style={{ border: '1px solid rgba(16, 185, 129, 0.25)', background: 'var(--accent-emerald-light)', padding: '2rem' }}>
                     <div className="upload-card-icon" style={{ background: 'var(--accent-emerald-light)', color: 'var(--accent-emerald)', border: 'none' }}>
                       <CheckCircle2 size={28} />
                     </div>

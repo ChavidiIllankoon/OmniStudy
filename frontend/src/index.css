@@ -178,6 +178,11 @@ body {
   text-decoration: none;
   cursor: pointer;
   transition: var(--transition-smooth);
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  text-align: left;
 }
 
 .nav-item:hover {
@@ -2507,4 +2512,8 @@ body {
 
 [data-theme='dark'] .recent-chat-item.active {
   background-color: var(--primary-light);
+}
+
+[data-theme='dark'] .sidebar-footer .nav-item {
+  color: var(--text-secondary);
 }
