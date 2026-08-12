@@ -1812,14 +1812,14 @@ function App() {
 
                     {/* Node 1: Machine Learning (Parent Root) */}
                     <g onClick={() => setSelectedNodeName('Machine Learning')} style={{ cursor: 'pointer' }}>
-                      <circle cx="300" cy="80" r="28" fill={selectedNodeName === 'Machine Learning' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Machine Learning' ? 'url(#glow)' : ''} />
+                      <circle cx="300" cy="80" r="28" fill={selectedNodeName === 'Machine Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Machine Learning' ? 'url(#glow)' : ''} />
                       <text x="300" y="84" textAnchor="middle" fill={selectedNodeName === 'Machine Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">ML</text>
                       <text x="300" y="45" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Machine Learning</text>
                     </g>
 
                     {/* Node 2: Neural Networks */}
                     <g onClick={() => setSelectedNodeName('Neural Networks')} style={{ cursor: 'pointer' }}>
-                      <circle cx="450" cy="140" r="24" fill={selectedNodeName === 'Neural Networks' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="2.5" className="node-circle" filter={selectedNodeName === 'Neural Networks' ? 'url(#glow)' : ''} />
+                      <circle cx="450" cy="140" r="24" fill={selectedNodeName === 'Neural Networks' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2.5" className="node-circle" filter={selectedNodeName === 'Neural Networks' ? 'url(#glow)' : ''} />
                       <text x="450" y="144" textAnchor="middle" fill={selectedNodeName === 'Neural Networks' ? '#ffffff' : 'var(--text-primary)'} className="node-text">NN</text>
                       <text x="450" y="180" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Neural Networks</text>
                     </g>
@@ -1828,30 +1828,30 @@ function App() {
                     <g onClick={() => setSelectedNodeName('Supervised Learning')} style={{ cursor: 'pointer' }}>
                       {/* Halo layer */}
                       <circle cx="300" cy="200" r="32" fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
-                      <circle cx="300" cy="200" r="24" fill={selectedNodeName === 'Supervised Learning' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Supervised Learning' ? 'url(#glow)' : ''} />
+                      <circle cx="300" cy="200" r="24" fill={selectedNodeName === 'Supervised Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Supervised Learning' ? 'url(#glow)' : ''} />
                       <text x="300" y="204" textAnchor="middle" fill={selectedNodeName === 'Supervised Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">SL</text>
                       {/* Concept Label Pill */}
-                      <rect x="230" y="240" width="140" height="24" rx="12" fill="#ffffff" stroke="var(--primary)" strokeWidth="1.5" />
+                      <rect x="230" y="240" width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
                       <text x="300" y="256" textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>Supervised Learning</text>
                     </g>
 
                     {/* Node 4: Classification */}
                     <g onClick={() => setSelectedNodeName('Classification')} style={{ cursor: 'pointer' }}>
-                      <circle cx="160" cy="290" r="22" fill={selectedNodeName === 'Classification' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Classification' ? 'url(#glow)' : ''} />
+                      <circle cx="160" cy="290" r="22" fill={selectedNodeName === 'Classification' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Classification' ? 'url(#glow)' : ''} />
                       <text x="160" y="294" textAnchor="middle" fill={selectedNodeName === 'Classification' ? '#ffffff' : 'var(--text-primary)'} className="node-text">CL</text>
                       <text x="160" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Classification</text>
                     </g>
 
                     {/* Node 5: Regression */}
                     <g onClick={() => setSelectedNodeName('Regression')} style={{ cursor: 'pointer' }}>
-                      <circle cx="300" cy="290" r="22" fill={selectedNodeName === 'Regression' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Regression' ? 'url(#glow)' : ''} />
+                      <circle cx="300" cy="290" r="22" fill={selectedNodeName === 'Regression' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Regression' ? 'url(#glow)' : ''} />
                       <text x="300" y="294" textAnchor="middle" fill={selectedNodeName === 'Regression' ? '#ffffff' : 'var(--text-primary)'} className="node-text">RG</text>
                       <text x="300" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Regression</text>
                     </g>
 
                     {/* Node 6: Decision Trees */}
                     <g onClick={() => setSelectedNodeName('Decision Trees')} style={{ cursor: 'pointer' }}>
-                      <circle cx="440" cy="290" r="22" fill={selectedNodeName === 'Decision Trees' ? 'var(--primary)' : '#ffffff'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Decision Trees' ? 'url(#glow)' : ''} />
+                      <circle cx="440" cy="290" r="22" fill={selectedNodeName === 'Decision Trees' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Decision Trees' ? 'url(#glow)' : ''} />
                       <text x="440" y="294" textAnchor="middle" fill={selectedNodeName === 'Decision Trees' ? '#ffffff' : 'var(--text-primary)'} className="node-text">DT</text>
                       <text x="440" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Decision Trees</text>
                     </g>
