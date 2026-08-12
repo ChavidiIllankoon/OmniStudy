@@ -81,6 +81,41 @@ function App() {
     localStorage.setItem('omnistudy-theme', theme);
   }, [theme]);
 
+  // Click outside references and event hook
+  const notificationsRef = useRef(null);
+  const helpRef = useRef(null);
+  const profileDropdownRef = useRef(null);
+  const sidebarMenuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (notificationsRef.current && 
+          !notificationsRef.current.contains(event.target) && 
+          !event.target.closest('[title="Notifications"]')) {
+        setShowNotifications(false);
+      }
+      if (helpRef.current && 
+          !helpRef.current.contains(event.target) && 
+          !event.target.closest('[title="Help Portal"]')) {
+        setShowHelp(false);
+      }
+      if (profileDropdownRef.current && 
+          !profileDropdownRef.current.contains(event.target) && 
+          !event.target.closest('.profile-avatar')) {
+        setShowProfileDropdown(false);
+      }
+      if (sidebarMenuRef.current && 
+          !sidebarMenuRef.current.contains(event.target) && 
+          !event.target.closest('.sidebar-user-card')) {
+        setShowSidebarMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Settings Configurations
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   const [conceptsEnabled, setConceptsEnabled] = useState(true);
@@ -765,7 +800,7 @@ function App() {
         <div className="sidebar-footer" style={{ position: 'relative' }}>
           {/* Popover User Menu */}
           {showSidebarMenu && user && (
-            <div className="sidebar-popover">
+            <div ref={sidebarMenuRef} className="sidebar-popover">
               <div 
                 className="popover-user-row" 
                 onClick={() => { 
@@ -1040,7 +1075,7 @@ function App() {
                 </div>
 
                 {showProfileDropdown && (
-                  <div className="floating-dropdown-card" style={{ right: 0, top: '48px', width: '180px', padding: '0' }}>
+                  <div ref={profileDropdownRef} className="floating-dropdown-card" style={{ right: 0, top: '48px', width: '180px', padding: '0' }}>
                     <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)' }}>
                       <p style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
                       <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
@@ -1103,7 +1138,7 @@ function App() {
 
             {/* 1. Notifications Floating Dropdown */}
             {showNotifications && (
-              <div className="floating-dropdown-card">
+              <div ref={notificationsRef} className="floating-dropdown-card">
                 <div className="dropdown-header-row">
                   <h4>Notifications</h4>
                   <button 
@@ -1151,7 +1186,7 @@ function App() {
 
             {/* 2. Help Portal Floating Dropdown */}
             {showHelp && (
-              <div className="floating-dropdown-card help">
+              <div ref={helpRef} className="floating-dropdown-card help">
                 <div className="dropdown-header-row">
                   <h4>Help Center & FAQ</h4>
                 </div>
