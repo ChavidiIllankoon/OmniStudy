@@ -74,6 +74,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [theme, setTheme] = useState(localStorage.getItem('omnistudy-theme') || 'light');
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showSidebarMenu, setShowSidebarMenu] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -761,18 +762,138 @@ function App() {
         </nav>
 
         {/* Footer Nav */}
-        <div className="sidebar-footer">
-          {/* User Account & Subscription Card */}
+        <div className="sidebar-footer" style={{ position: 'relative' }}>
+          {/* Popover User Menu */}
+          {showSidebarMenu && user && (
+            <div className="sidebar-popover">
+              <div 
+                className="popover-user-row" 
+                onClick={() => { 
+                  setActiveView('settings'); 
+                  setShowSidebarMenu(false); 
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: '#fbbf24',
+                    color: '#1e293b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    fontWeight: 700
+                  }}>
+                    {user.name.split(' ').map(n => n.charAt(0)).join('').toUpperCase().slice(0, 2)}
+                  </div>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-primary)', textTransform: 'lowercase' }}>{user.name}</p>
+                    <p style={{ margin: 0, fontSize: '0.68rem', color: 'var(--text-muted)' }}>{userPlan === 'Free Tier' ? 'Free' : 'Premium'}</p>
+                  </div>
+                </div>
+                <ChevronRight size={14} style={{ color: 'var(--text-muted)' }} />
+              </div>
+
+              {userPlan === 'Free Tier' && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
+                    setBillingError(null);
+                    setShowBillingModal(true);
+                    setShowSidebarMenu(false);
+                  }}
+                  className="popover-item-btn"
+                >
+                  <Sparkles size={14} style={{ color: 'var(--primary)' }} />
+                  Upgrade plan
+                </button>
+              )}
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTheme(theme === 'light' ? 'dark' : 'light');
+                  setShowSidebarMenu(false);
+                }}
+                className="popover-item-btn"
+              >
+                {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+                Personalization
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveView('settings');
+                  setShowSidebarMenu(false);
+                }}
+                className="popover-item-btn"
+              >
+                <User size={14} />
+                Profile
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveView('settings');
+                  setShowSidebarMenu(false);
+                }}
+                className="popover-item-btn"
+              >
+                <Settings size={14} />
+                Settings
+              </button>
+
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '0.25rem 0' }} />
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowHelp(true);
+                  setShowSidebarMenu(false);
+                }}
+                className="popover-item-btn"
+              >
+                <HelpCircle size={14} />
+                Help
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLogout();
+                  setShowSidebarMenu(false);
+                }}
+                className="popover-item-btn logout"
+              >
+                <LogOut size={14} />
+                Log out
+              </button>
+            </div>
+          )}
+
+          {/* User Account & Subscription Card (Click triggers Menu) */}
           {user && (
-            <div className="sidebar-user-card" style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.75rem 0.5rem',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              marginBottom: '0.5rem',
-              gap: '0.75rem'
-            }}>
+            <div 
+              className="sidebar-user-card" 
+              onClick={() => setShowSidebarMenu(!showSidebarMenu)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 0.5rem',
+                gap: '0.75rem',
+                cursor: 'pointer',
+                borderRadius: '8px',
+                transition: 'background-color 0.2s ease'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
                 <div style={{
                   width: '32px',
@@ -813,9 +934,10 @@ function App() {
                 </div>
               </div>
 
-              {userPlan === 'Free Tier' && (
+              {userPlan === 'Free Tier' ? (
                 <button 
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
                     setBillingError(null);
                     setShowBillingModal(true);
@@ -838,22 +960,11 @@ function App() {
                 >
                   Upgrade
                 </button>
+              ) : (
+                <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
               )}
             </div>
           )}
-
-          <button 
-            onClick={() => setActiveView('settings')} 
-            className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
-          >
-            <Settings size={18} className="nav-icon" />
-            Settings
-          </button>
-          
-          <button onClick={handleLogout} className="nav-item logout-item">
-            <LogOut size={18} className="nav-icon" style={{ color: 'var(--accent-rose)' }} />
-            Logout
-          </button>
         </div>
       </aside>
 

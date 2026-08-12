@@ -2523,3 +2523,76 @@ body {
 [data-theme='dark'] .sidebar-footer .nav-item {
   color: var(--text-secondary);
 }
+
+/* ==========================================================================
+   SIDEBAR ACCOUNT POPOVER MENU
+   ========================================================================== */
+.sidebar-popover {
+  position: absolute;
+  bottom: 80px;
+  left: 10px;
+  width: 240px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 0.5rem;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  animation: slideUpFade 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUpFade {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.popover-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: var(--transition-smooth);
+}
+
+.popover-user-row:hover {
+  background-color: var(--bg-main);
+}
+
+.popover-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  transition: var(--transition-smooth);
+}
+
+.popover-item-btn:hover {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.popover-item-btn.logout {
+  color: var(--accent-rose);
+}
+
+.popover-item-btn.logout:hover {
+  background-color: var(--accent-rose-light);
+  color: var(--accent-rose);
+}
