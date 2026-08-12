@@ -860,7 +860,20 @@ function App() {
                     </span>
                   ) : (
                     notifications.map(n => (
-                      <div key={n.id} className="dropdown-item-notify">
+                      <div 
+                        key={n.id} 
+                        className="dropdown-item-notify"
+                        onClick={() => {
+                          if (n.text.includes('indexed')) {
+                            setActiveView('chat');
+                          } else if (n.text.includes('concept node')) {
+                            setActiveView('graph');
+                          } else if (n.text.includes('student') || n.text.includes('Premium')) {
+                            setActiveView('settings');
+                          }
+                          setShowNotifications(false);
+                        }}
+                      >
                         <span className="notify-bullet"></span>
                         <div>
                           <p>{n.text}</p>
