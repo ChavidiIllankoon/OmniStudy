@@ -2384,8 +2384,8 @@ body {
    PORTAL DARK THEME STYLES
    ========================================================================== */
 [data-theme='dark'] {
-  --background-color: #0b0f19;
-  --panel-bg: #111827;
+  --bg-main: #0b0f19;
+  --bg-card: #111827;
   --border-color: #1f2937;
   --text-primary: #f9fafb;
   --text-secondary: #d1d5db;
@@ -2394,6 +2394,7 @@ body {
   --accent-emerald-light: rgba(16, 185, 129, 0.15);
   --accent-rose-light: rgba(244, 63, 94, 0.15);
   --accent-amber-light: rgba(245, 158, 11, 0.15);
+  --bg-sidebar: #070a13;
   color-scheme: dark;
 }
 
