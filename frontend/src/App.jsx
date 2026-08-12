@@ -762,6 +762,86 @@ function App() {
 
         {/* Footer Nav */}
         <div className="sidebar-footer">
+          {/* User Account & Subscription Card */}
+          {user && (
+            <div className="sidebar-user-card" style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.75rem 0.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              marginBottom: '0.5rem',
+              gap: '0.75rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fbbf24',
+                  color: '#1e293b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  flexShrink: 0
+                }}>
+                  {user.name.split(' ').map(n => n.charAt(0)).join('').toUpperCase().slice(0, 2)}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{
+                    color: '#ffffff',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    textTransform: 'lowercase'
+                  }}>
+                    {user.name}
+                  </p>
+                  <p style={{
+                    color: userPlan === 'Free Tier' ? '#94a3b8' : '#60a5fa',
+                    fontSize: '0.7rem',
+                    fontWeight: 500,
+                    margin: '0.15rem 0 0 0'
+                  }}>
+                    {userPlan === 'Free Tier' ? 'Free' : 'Premium'}
+                  </p>
+                </div>
+              </div>
+
+              {userPlan === 'Free Tier' && (
+                <button 
+                  onClick={() => {
+                    setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
+                    setBillingError(null);
+                    setShowBillingModal(true);
+                  }}
+                  style={{
+                    width: 'auto',
+                    padding: '0.35rem 0.75rem',
+                    fontSize: '0.72rem',
+                    borderRadius: '20px',
+                    backgroundColor: '#334155',
+                    color: '#ffffff',
+                    border: '1px solid #475569',
+                    boxShadow: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    transition: 'background-color 0.15s ease'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#475569'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#334155'}
+                >
+                  Upgrade
+                </button>
+              )}
+            </div>
+          )}
+
           <button 
             onClick={() => setActiveView('settings')} 
             className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
