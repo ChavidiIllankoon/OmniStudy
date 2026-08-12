@@ -2242,9 +2242,7 @@ body {
   margin-top: 0.15rem;
 }
 
-/* ==========================================================================
-   BILLING MODAL & CREDIT CARD MOCKUP STYLES
-   ========================================================================== */
+/*BILLING MODAL & CREDIT CARD MOCKUP STYLES*/
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -2275,8 +2273,15 @@ body {
 }
 
 @keyframes scaleUp {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .modal-header-row {
@@ -2315,7 +2320,7 @@ body {
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 80%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 80%);
   pointer-events: none;
 }
 
