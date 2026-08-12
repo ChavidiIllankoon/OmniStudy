@@ -2379,3 +2379,131 @@ body {
   grid-template-columns: 2fr 1fr;
   gap: 1rem;
 }
+
+/* ==========================================================================
+   PORTAL DARK THEME STYLES
+   ========================================================================== */
+[data-theme='dark'] {
+  --background-color: #0b0f19;
+  --panel-bg: #111827;
+  --border-color: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #6b7280;
+  --primary-light: rgba(37, 99, 235, 0.15);
+  --accent-emerald-light: rgba(16, 185, 129, 0.15);
+  --accent-rose-light: rgba(244, 63, 94, 0.15);
+  --accent-amber-light: rgba(245, 158, 11, 0.15);
+  color-scheme: dark;
+}
+
+[data-theme='dark'] input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  background-color: #1f2937 !important;
+  color: #f9fafb !important;
+  border-color: #374151 !important;
+}
+
+[data-theme='dark'] .sidebar-navigation {
+  background-color: #0e131f;
+  border-right-color: #1f2937;
+}
+
+[data-theme='dark'] .recent-chat-subsidebar {
+  background-color: #111827;
+  border-right-color: #1f2937;
+}
+
+[data-theme='dark'] .header-search {
+  background-color: #1f2937;
+}
+
+[data-theme='dark'] .header-search input {
+  background-color: transparent !important;
+  color: #f9fafb !important;
+}
+
+[data-theme='dark'] .material-card {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+[data-theme='dark'] .concept-detail-panel {
+  background-color: #111827;
+}
+
+[data-theme='dark'] .synthesis-card {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+[data-theme='dark'] .source-card {
+  background-color: #111827;
+  border-color: #1f2937;
+}
+
+[data-theme='dark'] .quick-access-card {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+[data-theme='dark'] .settings-card {
+  background-color: #111827;
+  border-color: #1f2937;
+}
+
+[data-theme='dark'] .price-card {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+[data-theme='dark'] .price-card.premium {
+  background-color: rgba(37, 99, 235, 0.15);
+  border-color: var(--primary);
+}
+
+[data-theme='dark'] .student-promo-banner {
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+[data-theme='dark'] .student-promo-text h4 {
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .student-promo-text p {
+  color: #f59e0b;
+}
+
+[data-theme='dark'] .billing-modal-card {
+  background-color: #111827;
+  border-color: #1f2937;
+}
+
+[data-theme='dark'] .dropdown-menu-list {
+  background-color: #111827;
+  border-color: #1f2937;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .dropdown-list-item:hover {
+  background-color: #1f2937;
+}
+
+[data-theme='dark'] .nav-item:hover {
+  background-color: #1f2937;
+}
+
+[data-theme='dark'] .nav-item.active {
+  background-color: var(--primary-light);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .recent-chat-item:hover {
+  background-color: #1f2937;
+}
+
+[data-theme='dark'] .recent-chat-item.active {
+  background-color: var(--primary-light);
+}

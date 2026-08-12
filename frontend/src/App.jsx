@@ -26,7 +26,9 @@ import {
   Settings,
   MoreVertical,
   PlusCircle,
-  Info
+  Info,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:5000';
@@ -70,6 +72,12 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [theme, setTheme] = useState(localStorage.getItem('omnistudy-theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('omnistudy-theme', theme);
+  }, [theme]);
 
   // Settings Configurations
   const [notifyEnabled, setNotifyEnabled] = useState(true);
@@ -781,6 +789,15 @@ function App() {
           </form>
 
           <div className="header-actions-wrapper">
+            <button 
+              className="header-icon-btn" 
+              title={theme === 'light' ? "Switch to Dark Mode" : "Switch to Light Mode"}
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              style={{ cursor: 'pointer' }}
+            >
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+
             <button 
               className="header-icon-btn" 
               title="Notifications"
