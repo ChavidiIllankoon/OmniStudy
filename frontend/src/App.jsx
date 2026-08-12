@@ -304,6 +304,13 @@ function App() {
           chunkCount: data.chunkCount,
           apiKeyConfigured: true
         });
+
+        // Add real-time notification
+        setNotifications(prev => [
+          { id: Date.now(), text: `${data.filename} has been successfully indexed.`, time: 'Just now' },
+          ...prev
+        ]);
+        setUnreadNotifications(true);
         
         setMessages([
           { 
