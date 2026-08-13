@@ -70,6 +70,7 @@ function App() {
 
   // Graph Interaction State
   const [selectedNodeName, setSelectedNodeName] = useState('Supervised Learning');
+  const [extractedConcepts, setExtractedConcepts] = useState([]);
 
   // Interactive UI States
   const [showNotifications, setShowNotifications] = useState(false);
@@ -257,6 +258,24 @@ function App() {
     }
   };
 
+  const fetchConcepts = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/concepts`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExtractedConcepts(data.concepts || []);
+        if (data.concepts && data.concepts.length > 0) {
+          setSelectedNodeName(data.concepts[0].name);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch concepts:", err);
+    }
+  };
+
   const fetchStatus = async () => {
     if (!token) return;
     try {
@@ -272,6 +291,9 @@ function App() {
       if (!res.ok) throw new Error('Failed to fetch backend status.');
       const data = await res.json();
       setSystemStatus(data);
+      if (data.hasDocument) {
+        fetchConcepts();
+      }
       if (!data.apiKeyConfigured) {
         setError('Google Gemini API Key is missing. Please configure GEMINI_API_KEY in the backend .env file.');
       } else {
@@ -370,6 +392,7 @@ function App() {
             text: `Hi ${user.name}! I've loaded your material "${data.filename}" and vector-indexed ${data.chunkCount} chunks. Ask me any question based on this lecture material, or explore the concept map in the Knowledge Graph!` 
           }
         ]);
+        fetchConcepts();
         setSources([]);
         setUploadFormTitle('');
         setUploading(false);
@@ -458,6 +481,8 @@ function App() {
         });
         setMessages([]);
         setSources([]);
+        setExtractedConcepts([]);
+        setSelectedNodeName('Machine Learning');
         setError(null);
       } catch (err) {
         console.error(err);
@@ -538,53 +563,94 @@ function App() {
 
   const statusDisplay = getStatusDisplay();
 
-  // Knowledge Graph Data
-  const nodesData = {
+  // Knowledge Graph Data (Fallback template)
+  const fallbackNodesData = {
     'Machine Learning': {
       name: 'Machine Learning',
       definition: 'A subset of artificial intelligence that involves training computer systems to learn patterns from data and make predictions or decisions with minimal human intervention.',
       related: ['Supervised Learning', 'Unsupervised Learning', 'Neural Networks'],
-      insights: 'This is the foundational unit of the course. Understanding this mapping is critical for all subsequent modules and quizzes.',
+      studyTips: 'This is the foundational unit of the course. Understanding this mapping is critical for all subsequent modules and quizzes.',
       badge: 'Root Domain'
     },
     'Supervised Learning': {
       name: 'Supervised Learning',
       definition: 'A machine learning approach where a model learns from labeled training data. The algorithm is given examples of inputs and their desired outputs, learning to map inputs to outputs.',
       related: ['Classification', 'Regression', 'Decision Trees'],
-      insights: 'This concept is heavily tested in upcoming exams. Consider reviewing the practical applications in Python using scikit-learn.',
+      studyTips: 'This concept is heavily tested in upcoming exams. Consider reviewing the practical applications in Python using scikit-learn.',
       badge: 'Selected Concept'
     },
     'Classification': {
       name: 'Classification',
       definition: 'A supervised learning task where the model predicts discrete class labels. Examples include email spam detection, credit default risk, or handwritten digit recognition.',
       related: ['Supervised Learning', 'Decision Trees', 'Regression'],
-      insights: 'Expect coding exercises on binary and multi-class classification in Homework 2.',
+      studyTips: 'Expect coding exercises on binary and multi-class classification in Homework 2.',
       badge: 'Task Node'
     },
     'Regression': {
       name: 'Regression',
       definition: 'A supervised learning task where the model predicts continuous numerical values. Examples include predicting house prices, temperature, or stock trends.',
       related: ['Supervised Learning', 'Classification', 'Gradient Descent'],
-      insights: 'Focus on understanding the loss function (Mean Squared Error) and how gradient descent updates coefficients.',
+      studyTips: 'Focus on understanding the loss function (Mean Squared Error) and how gradient descent updates coefficients.',
       badge: 'Task Node'
     },
     'Decision Trees': {
       name: 'Decision Trees',
       definition: 'A non-parametric supervised learning method used for classification and regression. It structures decisions as a tree of nodes (tests), branches (outcomes), and leaves (labels).',
       related: ['Supervised Learning', 'Classification', 'Random Forests'],
-      insights: 'Important for understanding ensemble learning (boosting/bagging) in later lectures.',
+      studyTips: 'Important for understanding ensemble learning (boosting/bagging) in later lectures.',
       badge: 'Algorithm Node'
     },
     'Neural Networks': {
       name: 'Neural Networks',
       definition: 'A series of algorithms that endeavors to recognize underlying relationships in a set of data through a process that mimics the way the human brain operates.',
       related: ['Machine Learning', 'Decision Trees', 'Deep Learning'],
-      insights: 'This topic will be covered extensively in Module 4. Previewing activation functions (ReLU, Sigmoid) is recommended.',
+      studyTips: 'This topic will be covered extensively in Module 4. Previewing activation functions (ReLU, Sigmoid) is recommended.',
       badge: 'Architecture Node'
     }
   };
 
-  const selectedNode = nodesData[selectedNodeName] || nodesData['Supervised Learning'];
+  // Get active concepts: dynamic if fetched from Postgres, otherwise fallback to static placeholder
+  const activeConcepts = extractedConcepts.length > 0 ? extractedConcepts : Object.values(fallbackNodesData);
+
+  // Position nodes dynamically inside SVG viewport
+  const nodesWithPositions = activeConcepts.map((concept, index) => {
+    // Center node
+    if (index === 0) {
+      return {
+        ...concept,
+        cx: 300,
+        cy: 180,
+        r: 28,
+        strokeWidth: 3,
+        badge: concept.badge || 'Root Concept',
+        insights: concept.studyTips || concept.insights
+      };
+    }
+    // Surrounding nodes
+    const radius = 120;
+    const angle = ((index - 1) * 2 * Math.PI) / (activeConcepts.length - 1);
+    return {
+      ...concept,
+      cx: Math.round(300 + radius * Math.cos(angle)),
+      cy: Math.round(180 + radius * Math.sin(angle)),
+      r: 22,
+      strokeWidth: 2.2,
+      badge: concept.badge || 'Related Node',
+      insights: concept.studyTips || concept.insights
+    };
+  });
+
+  // Find currently selected node details
+  let selectedNode = nodesWithPositions.find(n => n.name === selectedNodeName);
+  if (!selectedNode) {
+    selectedNode = nodesWithPositions[0] || {
+      name: 'Information',
+      definition: 'Please upload a PDF document to generate a dynamic concept graph.',
+      related: [],
+      studyTips: 'No tips available.',
+      badge: 'Info'
+    };
+  }
 
   const handleHeaderSearchSubmit = async (e) => {
     e.preventDefault();
@@ -1835,7 +1901,7 @@ function App() {
                 <div className="graph-canvas-header">
                   <div className="graph-canvas-header-info">
                     <h3>Knowledge Graph</h3>
-                    <p>Machine Learning - Lecture 01</p>
+                    <p>{systemStatus.filename || 'No Active Document'}</p>
                   </div>
                   
                   <div className="graph-actions-row">
@@ -1864,68 +1930,96 @@ function App() {
                     {/* Scale Wrapper Group */}
                     <g transform={`scale(${zoomScale}) translate(${(1 - zoomScale) * 300}, ${(1 - zoomScale) * 200})`} style={{ transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
                       {/* Connected Lines (Links) */}
-                      {/* ML (300, 80) -> SL (300, 200) */}
-                      <line x1="300" y1="80" x2="300" y2="200" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Supervised Learning' ? 'active' : ''}`} />
-                      
-                      {/* ML (300, 80) -> NN (450, 140) */}
-                      <line x1="300" y1="80" x2="450" y2="140" className={`link-line ${selectedNodeName === 'Machine Learning' || selectedNodeName === 'Neural Networks' ? 'active' : ''}`} />
-
-                      {/* SL (300, 200) -> Classification (160, 290) */}
-                      <line x1="300" y1="200" x2="160" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Classification' ? 'active' : ''}`} />
-
-                      {/* SL (300, 200) -> Regression (300, 290) */}
-                      <line x1="300" y1="200" x2="300" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Regression' ? 'active' : ''}`} />
-
-                      {/* SL (300, 200) -> Decision Trees (440, 290) */}
-                      <line x1="300" y1="200" x2="440" y2="290" className={`link-line ${selectedNodeName === 'Supervised Learning' || selectedNodeName === 'Decision Trees' ? 'active' : ''}`} />
+                      {(() => {
+                        const links = [];
+                        if (nodesWithPositions.length === 0) return links;
+                        
+                        // Link center node (index 0) to all other surrounding nodes
+                        for (let i = 1; i < nodesWithPositions.length; i++) {
+                          const src = nodesWithPositions[0];
+                          const tgt = nodesWithPositions[i];
+                          const active = selectedNodeName === src.name || selectedNodeName === tgt.name;
+                          links.push(
+                            <line 
+                              key={`link-center-${i}`} 
+                              x1={src.cx} 
+                              y1={src.cy} 
+                              x2={tgt.cx} 
+                              y2={tgt.cy} 
+                              className={`link-line ${active ? 'active' : ''}`} 
+                            />
+                          );
+                        }
+                        
+                        // Add links based on related array if nodes exist
+                        for (let i = 1; i < nodesWithPositions.length; i++) {
+                          const node = nodesWithPositions[i];
+                          const related = Array.isArray(node.related) ? node.related : [];
+                          for (const relName of related) {
+                            const targetNode = nodesWithPositions.find(n => n.name.toLowerCase() === relName.toLowerCase());
+                            if (targetNode && targetNode.name !== nodesWithPositions[0].name && targetNode.name !== node.name) {
+                              const active = selectedNodeName === node.name || selectedNodeName === targetNode.name;
+                              links.push(
+                                <line 
+                                  key={`link-${node.name}-${targetNode.name}`} 
+                                  x1={node.cx} 
+                                  y1={node.cy} 
+                                  x2={targetNode.cx} 
+                                  y2={targetNode.cy} 
+                                  className={`link-line ${active ? 'active' : ''}`} 
+                                />
+                              );
+                            }
+                          }
+                        }
+                        return links;
+                      })()}
 
                       {/* Nodes (Circles & Labels) */}
-
-                      {/* Node 1: Machine Learning (Parent Root) */}
-                      <g onClick={() => setSelectedNodeName('Machine Learning')} style={{ cursor: 'pointer' }}>
-                        <circle cx="300" cy="80" r="28" fill={selectedNodeName === 'Machine Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Machine Learning' ? 'url(#glow)' : ''} />
-                        <text x="300" y="84" textAnchor="middle" fill={selectedNodeName === 'Machine Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">ML</text>
-                        <text x="300" y="45" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Machine Learning</text>
-                      </g>
-
-                      {/* Node 2: Neural Networks */}
-                      <g onClick={() => setSelectedNodeName('Neural Networks')} style={{ cursor: 'pointer' }}>
-                        <circle cx="450" cy="140" r="24" fill={selectedNodeName === 'Neural Networks' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2.5" className="node-circle" filter={selectedNodeName === 'Neural Networks' ? 'url(#glow)' : ''} />
-                        <text x="450" y="144" textAnchor="middle" fill={selectedNodeName === 'Neural Networks' ? '#ffffff' : 'var(--text-primary)'} className="node-text">NN</text>
-                        <text x="450" y="180" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Neural Networks</text>
-                      </g>
-
-                      {/* Node 3: Supervised Learning (Selected focus) */}
-                      <g onClick={() => setSelectedNodeName('Supervised Learning')} style={{ cursor: 'pointer' }}>
-                        {/* Halo layer */}
-                        <circle cx="300" cy="200" r="32" fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
-                        <circle cx="300" cy="200" r="24" fill={selectedNodeName === 'Supervised Learning' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="3" className="node-circle" filter={selectedNodeName === 'Supervised Learning' ? 'url(#glow)' : ''} />
-                        <text x="300" y="204" textAnchor="middle" fill={selectedNodeName === 'Supervised Learning' ? '#ffffff' : 'var(--text-primary)'} className="node-text">SL</text>
-                        {/* Concept Label Pill */}
-                        <rect x="230" y="240" width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
-                        <text x="300" y="256" textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>Supervised Learning</text>
-                      </g>
-
-                      {/* Node 4: Classification */}
-                      <g onClick={() => setSelectedNodeName('Classification')} style={{ cursor: 'pointer' }}>
-                        <circle cx="160" cy="290" r="22" fill={selectedNodeName === 'Classification' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Classification' ? 'url(#glow)' : ''} />
-                        <text x="160" y="294" textAnchor="middle" fill={selectedNodeName === 'Classification' ? '#ffffff' : 'var(--text-primary)'} className="node-text">CL</text>
-                        <text x="160" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Classification</text>
-                      </g>
-
-                      {/* Node 5: Regression */}
-                      <g onClick={() => setSelectedNodeName('Regression')} style={{ cursor: 'pointer' }}>
-                        <circle cx="300" cy="290" r="22" fill={selectedNodeName === 'Regression' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Regression' ? 'url(#glow)' : ''} />
-                        <text x="300" y="294" textAnchor="middle" fill={selectedNodeName === 'Regression' ? '#ffffff' : 'var(--text-primary)'} className="node-text">RG</text>
-                        <text x="300" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Regression</text>
-                      </g>
-
-                      {/* Node 6: Decision Trees */}
-                      <g onClick={() => setSelectedNodeName('Decision Trees')} style={{ cursor: 'pointer' }}>
-                        <circle cx="440" cy="290" r="22" fill={selectedNodeName === 'Decision Trees' ? 'var(--primary)' : 'var(--bg-card)'} stroke="var(--primary)" strokeWidth="2" className="node-circle" filter={selectedNodeName === 'Decision Trees' ? 'url(#glow)' : ''} />
-                        <text x="440" y="294" textAnchor="middle" fill={selectedNodeName === 'Decision Trees' ? '#ffffff' : 'var(--text-primary)'} className="node-text">DT</text>
-                        <text x="440" y="328" textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>Decision Trees</text>
-                      </g>
+                      {nodesWithPositions.map((node, index) => {
+                        const isSelected = selectedNodeName === node.name;
+                        const abbreviation = node.abbreviation || node.name.substring(0, 2).toUpperCase();
+                        
+                        return (
+                          <g key={node.name} onClick={() => setSelectedNodeName(node.name)} style={{ cursor: 'pointer' }}>
+                            {index === 0 && (
+                              // Halo layer for root node
+                              <circle cx={node.cx} cy={node.cy} r={node.r + 8} fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
+                            )}
+                            <circle 
+                              cx={node.cx} 
+                              cy={node.cy} 
+                              r={node.r} 
+                              fill={isSelected ? 'var(--primary)' : 'var(--bg-card)'} 
+                              stroke="var(--primary)" 
+                              strokeWidth={node.strokeWidth} 
+                              className="node-circle" 
+                              filter={isSelected ? 'url(#glow)' : ''} 
+                            />
+                            <text 
+                              x={node.cx} 
+                              y={node.cy + 4} 
+                              textAnchor="middle" 
+                              fill={isSelected ? '#ffffff' : 'var(--text-primary)'} 
+                              className="node-text"
+                              style={{ fontSize: index === 0 ? '11px' : '9px', fontWeight: 700 }}
+                            >
+                              {abbreviation}
+                            </text>
+                            
+                            {index === 0 ? (
+                              <>
+                                {/* Root Label Pill */}
+                                <rect x={node.cx - 70} y={node.cy + 36} width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
+                                <text x={node.cx} y={node.cy + 52} textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>{node.name}</text>
+                              </>
+                            ) : (
+                              // Related node labels
+                              <text x={node.cx} y={node.cy + 38} textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>{node.name}</text>
+                            )}
+                          </g>
+                        );
+                      })}
                     </g>
                   </svg>
 
@@ -1965,18 +2059,21 @@ function App() {
                   <div className="inspector-section">
                     <h4>Related Concepts</h4>
                     <div className="related-list">
-                      {selectedNode.related.map(concept => (
-                        <span 
-                          key={concept} 
-                          className="related-pill"
-                          onClick={() => {
-                            if (nodesData[concept]) setSelectedNodeName(concept);
-                          }}
-                        >
-                          {concept}
-                          <ChevronRight size={10} />
-                        </span>
-                      ))}
+                      {selectedNode.related.map(concept => {
+                        const exists = nodesWithPositions.some(n => n.name === concept);
+                        return (
+                          <span 
+                            key={concept} 
+                            className="related-pill"
+                            onClick={() => {
+                              if (exists) setSelectedNodeName(concept);
+                            }}
+                          >
+                            {concept}
+                            <ChevronRight size={10} />
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
 

@@ -76,6 +76,18 @@ async function initDb() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS material_concepts (
+        id BIGSERIAL PRIMARY KEY,
+        material_id BIGINT NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        abbreviation VARCHAR(10) NOT NULL,
+        definition TEXT NOT NULL,
+        related TEXT[] NOT NULL,
+        study_tips TEXT NOT NULL
+      )
+    `);
+
     console.log("Database schema tables initialized successfully.");
 
     // Auto-migrate users from legacy users.json file if present
@@ -284,6 +296,34 @@ app.get('/api/status', authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint: Fetch concepts for active document (Protected)
+app.get('/api/concepts', authenticateToken, async (req, res) => {
+  try {
+    // 1. Get active material
+    const materialRes = await pool.query(
+      'SELECT id FROM materials WHERE user_id = $1 ORDER BY id DESC LIMIT 1',
+      [req.user.id]
+    );
+
+    if (materialRes.rows.length === 0) {
+      return res.json({ concepts: [] });
+    }
+
+    const materialId = materialRes.rows[0].id;
+
+    // 2. Fetch concepts
+    const conceptsRes = await pool.query(
+      'SELECT name, abbreviation, definition, related, study_tips as "studyTips" FROM material_concepts WHERE material_id = $1 ORDER BY id ASC',
+      [materialId]
+    );
+
+    res.json({ concepts: conceptsRes.rows });
+  } catch (err) {
+    console.error("Error fetching material concepts:", err);
+    res.status(500).json({ error: 'Failed to retrieve material concepts.' });
+  }
+});
+
 // Endpoint: Upload PDF, parse text, chunk, and embed (Protected)
 app.post('/api/upload', authenticateToken, upload.single('file'), async (req, res) => {
   try {
@@ -368,9 +408,92 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
           [materialId, chunk.page, chunk.text, vectorStr]
         );
       }
+
+      // Perform concept extraction using Gemini (as per the diagram path)
+      console.log("Extracting key concepts from PDF text...");
+      const sampleText = plainChunks.slice(0, 8).map(c => c.text).join('\n\n').substring(0, 8000);
+      
+      const conceptPrompt = `You are an academic curriculum designer. Analyze the following lecture/study text and extract exactly 5 key concepts, topics, or definitions.
+For each concept, provide:
+1. "name": A short title of the concept (1-3 words) (e.g. "Polymorphism", "Database Index").
+2. "abbreviation": A 2-3 character abbreviation for the concept nodes in a graph (e.g. "PM", "IDX").
+3. "definition": A clear 1-2 sentence academic explanation of the concept.
+4. "related": An array of other concept names in this list that are related/linked.
+5. "studyTips": A short, actionable advice capsule for studying this concept.
+
+Respond ONLY with a valid raw JSON array of objects, with no markdown code block formatting, no backticks, no comments, and no extra text.
+
+Text Content:
+${sampleText}`;
+
+      const chatModel = new ChatGoogleGenerativeAI({
+        apiKey: apiKey,
+        model: "gemini-3.5-flash",
+        temperature: 0.3
+      });
+
+      let extractedConcepts = [];
+      try {
+        const response = await chatModel.invoke(conceptPrompt);
+        let cleanJson = (response.content || "").trim();
+        if (cleanJson.startsWith('```json')) cleanJson = cleanJson.substring(7);
+        if (cleanJson.startsWith('```')) cleanJson = cleanJson.substring(3);
+        if (cleanJson.endsWith('```')) cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+        cleanJson = cleanJson.trim();
+        
+        extractedConcepts = JSON.parse(cleanJson);
+      } catch (err) {
+        console.error("Failed to extract dynamic concepts, utilizing fallback templates:", err);
+        extractedConcepts = [
+          {
+            name: "Lecture Overview",
+            abbreviation: "LOV",
+            definition: "The core introduction and foundational learning outcomes covered in the slide material.",
+            related: ["Core Concepts"],
+            studyTips: "Review this section first to establish a context framework."
+          },
+          {
+            name: "Core Concepts",
+            abbreviation: "CCS",
+            definition: "Primary terms, theories, and models key to understanding the slide context.",
+            related: ["Lecture Overview", "Practical Methods"],
+            studyTips: "Focus on definitions and real-world examples."
+          },
+          {
+            name: "Practical Methods",
+            abbreviation: "PMT",
+            definition: "How key concepts are applied practically in lab assignments and programming exercises.",
+            related: ["Core Concepts", "Advanced Extensions"],
+            studyTips: "Code or draw out diagrams to understand step-by-step applications."
+          },
+          {
+            name: "Advanced Extensions",
+            abbreviation: "AEX",
+            definition: "Topics expanding past core curriculum for higher-order learning challenges.",
+            related: ["Practical Methods"],
+            studyTips: "Cross-reference with reference materials."
+          }
+        ];
+      }
+
+      // Save concepts to PostgreSQL
+      for (const concept of extractedConcepts) {
+        const relatedArray = Array.isArray(concept.related) ? concept.related : [];
+        await client.query(
+          'INSERT INTO material_concepts (material_id, name, abbreviation, definition, related, study_tips) VALUES ($1, $2, $3, $4, $5, $6)',
+          [
+            materialId,
+            concept.name || "Untitled Concept",
+            concept.abbreviation || "CON",
+            concept.definition || "No definition available.",
+            relatedArray,
+            concept.studyTips || "No study tips available."
+          ]
+        );
+      }
       
       await client.query('COMMIT');
-      console.log("PostgreSQL vector indexing complete!");
+      console.log("PostgreSQL vector and concept indexing complete!");
       
       res.json({
         success: true,
