@@ -329,7 +329,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
     console.log("Generating embeddings and building memory vector store via LangChain...");
     const embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: apiKey,
-      modelName: "text-embedding-004",
+      modelName: "models/gemini-embedding-2",
     });
 
     const vectorStore = await MemoryVectorStore.fromDocuments(langDocs, embeddings);
@@ -363,8 +363,11 @@ app.post('/api/query', authenticateToken, async (req, res) => {
     }
 
     const userDoc = userDocuments[req.user.id];
-    if (!userDoc || !userDoc.filename || !userDoc.vectorStore) {
+    if (!userDoc || !userDoc.filename) {
       return res.status(400).json({ error: 'No document has been uploaded yet. Please upload a PDF first.' });
+    }
+    if (!userDoc.vectorStore) {
+      return res.status(400).json({ error: 'Please re-upload your PDF document to initialize the LangChain vector database.' });
     }
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       return res.status(500).json({ error: 'Gemini API key is not configured.' });
