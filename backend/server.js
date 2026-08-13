@@ -17,7 +17,94 @@ const port = process.env.PORT || 5000;
 
 // JWT Secret Key configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'omnistudy_ai_poc_jwt_secret_token_123456';
-const USERS_FILE = path.join(__dirname, 'users.json');
+
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+});
+
+async function initDb() {
+  try {
+    await pool.query('SELECT NOW()');
+    console.log("Connected to PostgreSQL database successfully.");
+
+    await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+    console.log("Vector extension verified/enabled.");
+
+    // Check if column users.id is bigint to handle schema upgrade
+    const typeCheck = await pool.query(`
+      SELECT data_type FROM information_schema.columns 
+      WHERE table_name = 'users' AND column_name = 'id'
+    `);
+    if (typeCheck.rows.length > 0 && typeCheck.rows[0].data_type !== 'bigint') {
+      console.log("Upgrading database schema to support 64-bit integer IDs...");
+      await pool.query('DROP TABLE IF EXISTS material_chunks, materials, users CASCADE;');
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS materials (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        filename VARCHAR(255) NOT NULL,
+        file_size INTEGER NOT NULL,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS material_chunks (
+        id BIGSERIAL PRIMARY KEY,
+        material_id BIGINT NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+        page_number INTEGER NOT NULL,
+        chunk_text TEXT NOT NULL,
+        embedding vector(3072)
+      )
+    `);
+
+    console.log("Database schema tables initialized successfully.");
+
+    // Auto-migrate users from legacy users.json file if present
+    const USERS_FILE = path.join(__dirname, 'users.json');
+    if (fs.existsSync(USERS_FILE)) {
+      try {
+        const fileData = fs.readFileSync(USERS_FILE, 'utf8');
+        const usersArray = JSON.parse(fileData);
+        for (const u of usersArray) {
+          const check = await pool.query('SELECT * FROM users WHERE email = $1', [u.email.toLowerCase().trim()]);
+          if (check.rows.length === 0) {
+            await pool.query(
+              'INSERT INTO users (id, name, email, password) VALUES ($1, $2, $3, $4)',
+              [parseInt(u.id, 10), u.name.trim(), u.email.toLowerCase().trim(), u.password]
+            );
+            console.log(`Migrated user account to PostgreSQL: ${u.email}`);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to migrate legacy users.json data:", e);
+      }
+    }
+  } catch (err) {
+    console.error("Database initialization failed:", err);
+    process.exit(1);
+  }
+}
+
+initDb();
 
 // Enable CORS for frontend integration
 app.use(cors());
@@ -35,32 +122,6 @@ if (!apiKey || apiKey === 'your_gemini_api_key_here') {
   console.warn("WARNING: GEMINI_API_KEY is not configured in .env!");
 }
 const ai = new GoogleGenAI({ apiKey });
-
-// In-memory store for RAG document state, isolated per user ID
-// Structure: { [userId]: { filename, fileSize, chunks: [] } }
-const userDocuments = {};
-
-/* --- User Database Helpers --- */
-function loadUsers() {
-  try {
-    if (!fs.existsSync(USERS_FILE)) {
-      fs.writeFileSync(USERS_FILE, JSON.stringify([]));
-    }
-    const data = fs.readFileSync(USERS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error("Error reading users database:", err);
-    return [];
-  }
-}
-
-function saveUsers(users) {
-  try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  } catch (err) {
-    console.error("Error writing users database:", err);
-  }
-}
 
 /* --- Authentication Middleware --- */
 function authenticateToken(req, res, next) {
@@ -80,70 +141,6 @@ function authenticateToken(req, res, next) {
   }
 }
 
-/* --- Helper to split page-by-page text into overlapping chunks --- */
-function chunkText(pages, chunkSize = 600, overlap = 150) {
-  const chunks = [];
-  let chunkId = 0;
-
-  for (const page of pages) {
-    const text = page.text.replace(/\s+/g, ' ').trim();
-    if (!text) continue;
-
-    if (text.length <= chunkSize) {
-      chunks.push({
-        id: chunkId++,
-        text: text,
-        page: page.pageNumber
-      });
-      continue;
-    }
-
-    let start = 0;
-    while (start < text.length) {
-      let end = start + chunkSize;
-      
-      if (end < text.length) {
-        const nextSpace = text.indexOf(' ', end);
-        if (nextSpace !== -1 && nextSpace - end < 20) {
-          end = nextSpace;
-        }
-      } else {
-        end = text.length;
-      }
-
-      const sliceText = text.substring(start, end).trim();
-      if (sliceText) {
-        chunks.push({
-          id: chunkId++,
-          text: sliceText,
-          page: page.pageNumber
-        });
-      }
-
-      start = end - overlap;
-      if (start >= text.length - overlap) {
-        break;
-      }
-    }
-  }
-
-  return chunks;
-}
-
-/* --- Calculates Cosine Similarity between two numeric vectors --- */
-function cosineSimilarity(vecA, vecB) {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
 /* --- User Authentication Endpoints --- */
 
 // Endpoint: Register User
@@ -157,31 +154,28 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
     }
 
-    const users = loadUsers();
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check if user exists
-    if (users.find(u => u.email === normalizedEmail)) {
+    // Check if user exists in PostgreSQL
+    const existCheck = await pool.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
+    if (existCheck.rows.length > 0) {
       return res.status(400).json({ error: 'User with this email already exists.' });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = {
-      id: Date.now().toString(),
-      name: name.trim(),
-      email: normalizedEmail,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    saveUsers(users);
+    // Save user to PostgreSQL
+    const userId = Date.now();
+    const insertRes = await pool.query(
+      'INSERT INTO users (id, name, email, password) VALUES ($1, $2, $3, $4) RETURNING id, name, email',
+      [userId, name.trim(), normalizedEmail, hashedPassword]
+    );
+    const newUser = insertRes.rows[0];
 
     // Sign JWT
     const token = jwt.sign(
-      { id: newUser.id, name: newUser.name, email: newUser.email },
+      { id: newUser.id.toString(), name: newUser.name, email: newUser.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -189,7 +183,7 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(201).json({
       token,
       user: {
-        id: newUser.id,
+        id: newUser.id.toString(),
         name: newUser.name,
         email: newUser.email
       }
@@ -209,13 +203,14 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Please enter both email and password.' });
     }
 
-    const users = loadUsers();
     const normalizedEmail = email.toLowerCase().trim();
-    const user = users.find(u => u.email === normalizedEmail);
 
-    if (!user) {
+    // Query user from PostgreSQL
+    const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
+    if (userRes.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid email or password.' });
     }
+    const user = userRes.rows[0];
 
     // Verify Password
     const isMatch = await bcrypt.compare(password, user.password);
@@ -225,7 +220,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Sign JWT
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email },
+      { id: user.id.toString(), name: user.name, email: user.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -233,7 +228,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({
       token,
       user: {
-        id: user.id,
+        id: user.id.toString(),
         name: user.name,
         email: user.email
       }
@@ -253,15 +248,40 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 /* --- Protected RAG Endpoints --- */
 
 // Endpoint: Check system/document status
-app.get('/api/status', authenticateToken, (req, res) => {
-  const userDoc = userDocuments[req.user.id] || { filename: null, fileSize: 0, chunks: [] };
-  res.json({
-    hasDocument: !!userDoc.filename,
-    filename: userDoc.filename,
-    fileSize: userDoc.fileSize,
-    chunkCount: userDoc.chunks.length,
-    apiKeyConfigured: !!apiKey && apiKey !== 'your_gemini_api_key_here'
-  });
+app.get('/api/status', authenticateToken, async (req, res) => {
+  try {
+    const materialRes = await pool.query(
+      'SELECT id, filename, file_size FROM materials WHERE user_id = $1 ORDER BY id DESC LIMIT 1',
+      [req.user.id]
+    );
+
+    if (materialRes.rows.length === 0) {
+      return res.json({
+        hasDocument: false,
+        filename: null,
+        fileSize: 0,
+        chunkCount: 0,
+        apiKeyConfigured: !!apiKey && apiKey !== 'your_gemini_api_key_here'
+      });
+    }
+
+    const material = materialRes.rows[0];
+    const countRes = await pool.query(
+      'SELECT COUNT(*) as count FROM material_chunks WHERE material_id = $1',
+      [material.id]
+    );
+
+    res.json({
+      hasDocument: true,
+      filename: material.filename,
+      fileSize: material.file_size,
+      chunkCount: parseInt(countRes.rows[0].count, 10),
+      apiKeyConfigured: !!apiKey && apiKey !== 'your_gemini_api_key_here'
+    });
+  } catch (err) {
+    console.error("Error fetching document status:", err);
+    res.status(500).json({ error: 'Failed to retrieve document status.' });
+  }
 });
 
 // Endpoint: Upload PDF, parse text, chunk, and embed (Protected)
@@ -291,9 +311,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
       chunkOverlap: 150
     });
 
-    const langDocs = [];
     const plainChunks = [];
-    let chunkId = 0;
 
     for (const page of pages) {
       const text = page.text.replace(/\s+/g, ' ').trim();
@@ -303,18 +321,9 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
 
       for (const doc of pageDocs) {
         const chunkObj = {
-          id: `${req.user.id}_chunk_${chunkId++}`,
           text: doc.pageContent,
           page: page.pageNumber
         };
-        
-        langDocs.push({
-          pageContent: chunkObj.text,
-          metadata: {
-            id: chunkObj.id,
-            page: chunkObj.page
-          }
-        });
         plainChunks.push(chunkObj);
       }
     }
@@ -325,30 +334,57 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
       return res.status(400).json({ error: 'No text content could be extracted from this PDF.' });
     }
 
-    // Generate embeddings and build Memory Vector Store using LangChain wrappers
-    console.log("Generating embeddings and building memory vector store via LangChain...");
+    // Generate embeddings via LangChain
+    console.log("Generating embeddings via LangChain...");
     const embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: apiKey,
       modelName: "models/gemini-embedding-2",
     });
 
-    const vectorStore = await MemoryVectorStore.fromDocuments(langDocs, embeddings);
+    const textsToEmbed = plainChunks.map(c => c.text);
+    const vectorEmbeddings = await embeddings.embedDocuments(textsToEmbed);
 
-    // Save to user-specific document store
-    userDocuments[req.user.id] = {
-      filename: req.file.originalname,
-      fileSize: req.file.size,
-      chunks: plainChunks,
-      vectorStore: vectorStore
-    };
-
-    console.log("LangChain vector indexing complete!");
-    res.json({
-      success: true,
-      filename: req.file.originalname,
-      chunkCount: plainChunks.length,
-      message: 'PDF uploaded, chunked, and embedded successfully using LangChain.'
-    });
+    console.log("Saving document metadata and chunks to PostgreSQL...");
+    
+    // Create transaction to save document and chunks
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Save material record
+      const docRes = await client.query(
+        'INSERT INTO materials (user_id, filename, file_size) VALUES ($1, $2, $3) RETURNING id',
+        [req.user.id, req.file.originalname, req.file.size]
+      );
+      const materialId = docRes.rows[0].id;
+      
+      // Save chunks and vectors
+      for (let i = 0; i < plainChunks.length; i++) {
+        const chunk = plainChunks[i];
+        const vectorStr = `[${vectorEmbeddings[i].join(',')}]`;
+        
+        await client.query(
+          'INSERT INTO material_chunks (material_id, page_number, chunk_text, embedding) VALUES ($1, $2, $3, $4)',
+          [materialId, chunk.page, chunk.text, vectorStr]
+        );
+      }
+      
+      await client.query('COMMIT');
+      console.log("PostgreSQL vector indexing complete!");
+      
+      res.json({
+        success: true,
+        filename: req.file.originalname,
+        chunkCount: plainChunks.length,
+        message: 'PDF uploaded, chunked, and embedded successfully using LangChain and PostgreSQL.'
+      });
+      
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
 
   } catch (error) {
     console.error('Upload Error:', error);
@@ -362,34 +398,50 @@ app.post('/api/query', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Query text is required.' });
     }
 
-    const userDoc = userDocuments[req.user.id];
-    if (!userDoc || !userDoc.filename) {
-      return res.status(400).json({ error: 'No document has been uploaded yet. Please upload a PDF first.' });
-    }
-    if (!userDoc.vectorStore) {
-      return res.status(400).json({ error: 'Please re-upload your PDF document to initialize the LangChain vector database.' });
-    }
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       return res.status(500).json({ error: 'Gemini API key is not configured.' });
     }
 
-    console.log(`Query from ${req.user.name} (via LangChain): "${query}"`);
+    // 1. Fetch active document from PostgreSQL
+    const materialRes = await pool.query(
+      'SELECT id, filename FROM materials WHERE user_id = $1 ORDER BY id DESC LIMIT 1',
+      [req.user.id]
+    );
 
-    // 1. Retrieve relevant chunks using LangChain similarity search with score
-    const searchResults = await userDoc.vectorStore.similaritySearchWithScore(query, 5);
+    if (materialRes.rows.length === 0) {
+      return res.status(400).json({ error: 'No document has been uploaded yet. Please upload a PDF first.' });
+    }
+    const material = materialRes.rows[0];
 
-    // Map distances to scores (MemoryVectorStore uses cosine distance or L2 distance)
-    const relevantChunks = searchResults.map(([doc, distance]) => {
-      const similarity = Math.max(0, Math.min(1, 1 - distance));
+    console.log(`Query from ${req.user.name} (via LangChain & Postgres): "${query}"`);
+
+    // 2. Generate embedding for query using LangChain wrapper
+    const embeddings = new GoogleGenerativeAIEmbeddings({
+      apiKey: apiKey,
+      modelName: "models/gemini-embedding-2",
+    });
+    const queryVector = await embeddings.embedQuery(query);
+    const vectorStr = `[${queryVector.join(',')}]`;
+
+    // 3. Retrieve top 5 most similar chunks from pgvector
+    const searchResults = await pool.query(`
+      SELECT id, chunk_text, page_number, (1 - (embedding <=> $2)) as similarity
+      FROM material_chunks
+      WHERE material_id = $1
+      ORDER BY embedding <=> $2
+      LIMIT 5
+    `, [material.id, vectorStr]);
+
+    const relevantChunks = searchResults.rows.map(row => {
       return {
-        id: doc.metadata.id,
-        text: doc.pageContent,
-        page: doc.metadata.page,
-        similarity: similarity
+        id: row.id.toString(),
+        text: row.chunk_text,
+        page: row.page_number,
+        similarity: parseFloat(row.similarity)
       };
     }).filter(c => c.similarity > 0.1);
 
-    // 2. Construct context representation
+    // 4. Construct context representation
     let contextText = "";
     if (relevantChunks.length > 0) {
       contextText = relevantChunks.map((chunk, index) => {
@@ -399,7 +451,7 @@ app.post('/api/query', authenticateToken, async (req, res) => {
       contextText = "No relevant context found.";
     }
 
-    // 3. Construct prompt
+    // 5. Construct prompt
     const chatPrompt = `You are OmniStudy AI, an intelligent, helpful university learning assistant.
 Your goal is to answer the user's question accurately using ONLY the provided lecture document context.
 
@@ -420,11 +472,11 @@ User Question: ${query}
 
 Write the answer below:`;
 
-    // 4. Query Gemini Chat Model wrapper in LangChain
+    // 6. Query Gemini Chat Model wrapper in LangChain
     console.log("Requesting answer from ChatGoogleGenerativeAI (LangChain)...");
     const chatModel = new ChatGoogleGenerativeAI({
       apiKey: apiKey,
-      modelName: "gemini-1.5-flash",
+      model: "gemini-3.5-flash",
       temperature: 0.2
     });
 
@@ -445,19 +497,37 @@ Write the answer below:`;
     console.error('Query Error:', error);
     res.status(500).json({ error: 'Failed to process query and generate answer.', details: error.message });
   }
-});// Endpoint: Generate an interactive multiple-choice quiz based on the indexed document text (Protected)
+});
+
+// Endpoint: Generate an interactive multiple-choice quiz based on the indexed document text (Protected)
 app.post('/api/quiz', authenticateToken, async (req, res) => {
   try {
-    const userDoc = userDocuments[req.user.id];
-    if (!userDoc || !userDoc.filename || userDoc.chunks.length === 0) {
-      return res.status(400).json({ error: 'No document uploaded. Please upload a PDF first.' });
-    }
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       return res.status(500).json({ error: 'Gemini API key is not configured.' });
     }
 
-    // Use up to 3 chunks to provide context for the quiz
-    const contextText = userDoc.chunks.slice(0, 3).map(c => c.text).join('\n\n');
+    // 1. Fetch active document from PostgreSQL
+    const materialRes = await pool.query(
+      'SELECT id, filename FROM materials WHERE user_id = $1 ORDER BY id DESC LIMIT 1',
+      [req.user.id]
+    );
+
+    if (materialRes.rows.length === 0) {
+      return res.status(400).json({ error: 'No document uploaded. Please upload a PDF first.' });
+    }
+    const material = materialRes.rows[0];
+
+    // 2. Fetch up to 3 chunks to provide context for the quiz
+    const chunksRes = await pool.query(
+      'SELECT chunk_text FROM material_chunks WHERE material_id = $1 LIMIT 3',
+      [material.id]
+    );
+
+    if (chunksRes.rows.length === 0) {
+      return res.status(400).json({ error: 'No chunks found for this document. Please re-upload.' });
+    }
+
+    const contextText = chunksRes.rows.map(row => row.chunk_text).join('\n\n');
 
     const prompt = `You are an academic instructor. Generate a multiple-choice quiz of exactly 3 questions based on the following text content.
 Each question must have:
@@ -473,12 +543,13 @@ ${contextText}`;
     console.log("Requesting quiz from ChatGoogleGenerativeAI (LangChain)...");
     const chatModel = new ChatGoogleGenerativeAI({
       apiKey: apiKey,
-      modelName: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       temperature: 0.3
     });
 
     const response = await chatModel.invoke(prompt);
     const responseText = response.content ? response.content.trim() : '';
+    
     // Clean up any markdown code blocks just in case
     let cleanJson = responseText;
     if (cleanJson.startsWith('```json')) {
@@ -501,7 +572,7 @@ ${contextText}`;
       res.json({
         questions: [
           {
-            question: `What is the primary topic of the document "${userDoc.filename}"?`,
+            question: `What is the primary topic of the document "${material.filename}"?`,
             options: ["Supervised learning models", "Unsupervised classification", "General lecture concepts", "Database index files"],
             answerIndex: 2
           },
@@ -523,11 +594,18 @@ ${contextText}`;
     console.error('Quiz Generation Error:', err);
     res.status(500).json({ error: 'Failed to generate quiz.' });
   }
-});// Endpoint: Clear the current document cache (Protected)
-app.post('/api/clear', authenticateToken, (req, res) => {
-  delete userDocuments[req.user.id];
-  console.log(`Document memory cleared for user: ${req.user.name}`);
-  res.json({ success: true, message: "Cleared document memory." });
+});
+
+// Endpoint: Clear the current document cache (Protected)
+app.post('/api/clear', authenticateToken, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM materials WHERE user_id = $1', [req.user.id]);
+    console.log(`Document memory cleared in database for user: ${req.user.name}`);
+    res.json({ success: true, message: "Cleared document database records." });
+  } catch (err) {
+    console.error("Error clearing document records:", err);
+    res.status(500).json({ error: 'Failed to clear document records.' });
+  }
 });
 
 // Start the server
