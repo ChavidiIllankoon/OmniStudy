@@ -6,7 +6,7 @@ const { PDFParse } = require('pdf-parse');
 const { GoogleGenAI } = require('@google/genai');
 const { RecursiveCharacterTextSplitter } = require("@langchain/textsplitters");
 const { MemoryVectorStore } = require("@langchain/classic/vectorstores/memory");
-const { ChatGoogleGenerativeAI, GoogleGenAIEmbeddings } = require("@langchain/google-genai");
+const { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
@@ -327,7 +327,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
 
     // Generate embeddings and build Memory Vector Store using LangChain wrappers
     console.log("Generating embeddings and building memory vector store via LangChain...");
-    const embeddings = new GoogleGenAIEmbeddings({
+    const embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: apiKey,
       modelName: "text-embedding-004",
     });
