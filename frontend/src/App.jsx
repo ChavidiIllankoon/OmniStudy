@@ -89,6 +89,10 @@ function App() {
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
 
+  // Share Graph Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharedGraphId, setSharedGraphId] = useState(null);
+
   // Graph Zoom State
   const [zoomScale, setZoomScale] = useState(1);
 
@@ -146,6 +150,15 @@ function App() {
     cvv: ''
   });
   const [billingError, setBillingError] = useState(null);
+  const [stripeConfigured, setStripeConfigured] = useState(false);
+  const [dodoConfigured, setDodoConfigured] = useState(false);
+  const [usageStats, setUsageStats] = useState({
+    materialsCount: 0,
+    storageBytes: 0,
+    aiQuestionsUsed: 0,
+    quizzesUsed: 0,
+    flashcardsUsed: 0
+  });
 
   // Notifications List
   const [notifications, setNotifications] = useState([
@@ -183,12 +196,65 @@ function App() {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Sync status on token change
+  // Sync status on token change and parse Stripe redirects
   useEffect(() => {
     if (token) {
       fetchStatus();
     }
+    
+    const params = new URLSearchParams(window.location.search);
+    const dodoStatus = params.get('status');
+    
+    if (params.get('billing_success') || dodoStatus === 'succeeded') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      setNotifications(prev => [
+        { id: Date.now(), text: '💳 Subscription activated successfully.', time: 'Just now' },
+        ...prev
+      ]);
+      setUnreadNotifications(true);
+      alert('Payment Successful! Welcome to OmniStudy Premium.');
+      
+      if (token) {
+        fetchStatus();
+      }
+    } else if (params.get('billing_cancel') || dodoStatus === 'failed') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      alert('Subscription checkout failed or was canceled.');
+    }
   }, [token]);
+
+  // Parse URL parameters and check shared_graph_id
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sgId = params.get('shared_graph_id');
+    if (sgId) {
+      setSharedGraphId(sgId);
+      fetchSharedGraph(sgId);
+    }
+  }, []);
+
+  const fetchSharedGraph = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/public/shared-graph/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExtractedConcepts(data.concepts || []);
+        setSystemStatus(prev => ({
+          ...prev,
+          filename: data.filename,
+          hasDocument: true
+        }));
+        if (data.concepts && data.concepts.length > 0) {
+          setSelectedNodeName(data.concepts[0].name);
+        }
+      } else {
+        alert('Shared graph could not be found or has been deleted.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Scroll to bottom of chat when new messages arrive
   useEffect(() => {
@@ -276,9 +342,85 @@ function App() {
     }
   };
 
+  const fetchBillingStatus = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/billing/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.studentPromoClaimed) {
+          setUserPlan('University Premium (Promo: 3 Months Free)');
+        } else {
+          setUserPlan(data.plan === 'premium' ? 'Premium Plan' : 'Free Tier');
+        }
+        setStripeConfigured(data.stripeConfigured);
+        setDodoConfigured(data.dodoConfigured);
+        if (data.usage) {
+          setUsageStats(data.usage);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch billing status:", err);
+    }
+  };
+
+  const handleUpgradeClick = async (e) => {
+    if (e) e.stopPropagation();
+    setBillingError(null);
+    
+    if (dodoConfigured) {
+      setBillingLoading(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/billing/create-dodo-checkout-session`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create Dodo checkout session.');
+        if (data.url) {
+          window.location.href = data.url;
+        }
+      } catch (err) {
+        console.error(err);
+        alert(`Dodo Payments Error: ${err.message}`);
+      } finally {
+        setBillingLoading(false);
+      }
+    } else if (stripeConfigured) {
+      setBillingLoading(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/billing/create-checkout-session`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create checkout session.');
+        if (data.url) {
+          window.location.href = data.url;
+        }
+      } catch (err) {
+        console.error(err);
+        alert(`Stripe Error: ${err.message}`);
+      } finally {
+        setBillingLoading(false);
+      }
+    } else {
+      alert("Direct card checkout is disabled. A secure payment gateway (Stripe or Dodo Payments) must be configured on the server to process upgrades.");
+    }
+  };
+
   const fetchStatus = async () => {
     if (!token) return;
     try {
+      fetchBillingStatus();
       const res = await fetch(`${API_BASE_URL}/api/status`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -357,13 +499,12 @@ function App() {
         body: formData,
       });
 
-      if (res.status === 401 || res.status === 403) {
-        handleLogout();
-        return;
-      }
-
       if (!res.ok) {
         const errorData = await res.json();
+        if (res.status === 401 || errorData.error === 'Session expired or token is invalid.') {
+          handleLogout();
+          return;
+        }
         throw new Error(errorData.error || 'Failed to upload and parse PDF.');
       }
 
@@ -432,7 +573,7 @@ function App() {
         body: JSON.stringify({ query: userMessage })
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         handleLogout();
         return;
       }
@@ -513,7 +654,8 @@ function App() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to generate quiz');
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to generate quiz.');
       }
 
       const data = await res.json();
@@ -529,14 +671,29 @@ function App() {
   };
 
   const handleShareGraph = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert('Graph sharing link copied to clipboard successfully!');
-    
-    setNotifications(prev => [
-      { id: Date.now(), text: 'Sharing link copied to clipboard.', time: 'Just now' },
-      ...prev
-    ]);
-    setUnreadNotifications(true);
+    setShowShareModal(true);
+  };
+
+  const fallbackCopyText = (text) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        alert('Graph sharing link copied to clipboard successfully!');
+      } else {
+        alert('Failed to copy link. Please manually copy the URL from your browser address bar.');
+      }
+    } catch (err) {
+      alert('Failed to copy link. Please manually copy the URL from your browser address bar.');
+    }
+    document.body.removeChild(textArea);
   };
 
   const formatBytes = (bytes, decimals = 2) => {
@@ -683,7 +840,7 @@ function App() {
         body: JSON.stringify({ query: userMessage })
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         handleLogout();
         return;
       }
@@ -864,6 +1021,232 @@ function App() {
     );
   }
 
+  // Public Shared Graph view layout (Bypasses main workspace dashboard and sidebar)
+  if (sharedGraphId) {
+    const sharedUrl = `${window.location.origin}/?shared_graph_id=${sharedGraphId}`;
+    return (
+      <div className="shared-graph-layout" style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--font-main)' }}>
+        <header style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '1rem 2rem',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid var(--border-color)',
+          boxShadow: 'var(--shadow-sm)',
+          zIndex: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--primary)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800
+            }}>O</div>
+            <div>
+              <h2 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>OmniStudy AI</h2>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', margin: 0 }}>Public Shared Concept Map</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              window.location.href = window.location.origin;
+            }} 
+            className="action-btn-primary"
+            style={{ width: 'auto', padding: '0.5rem 1.25rem', fontSize: '0.8rem' }}
+          >
+            Create Your Own Graph
+          </button>
+        </header>
+
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.35fr 0.65fr', minHeight: 0, padding: '1.5rem', gap: '1.5rem' }}>
+          
+          {/* Left Column: Interactive Graph Map */}
+          <div className="graph-canvas-panel">
+            <div className="graph-canvas-header">
+              <div className="graph-canvas-header-info">
+                <h3>Shared Concept Map</h3>
+                <p>{systemStatus.filename || 'Lecture Material'}</p>
+              </div>
+            </div>
+
+            {/* SVG Visual Network */}
+            <div className="graph-svg-container">
+              <svg className="graph-svg" viewBox="0 0 600 400">
+                <defs>
+                  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                </defs>
+
+                {/* Scale Wrapper Group */}
+                <g transform={`scale(${zoomScale}) translate(${(1 - zoomScale) * 300}, ${(1 - zoomScale) * 200})`} style={{ transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                  {/* Connected Lines (Links) */}
+                  {(() => {
+                    const links = [];
+                    if (nodesWithPositions.length === 0) return links;
+                    
+                    // Link center node (index 0) to all other surrounding nodes
+                    for (let i = 1; i < nodesWithPositions.length; i++) {
+                      const src = nodesWithPositions[0];
+                      const tgt = nodesWithPositions[i];
+                      const active = selectedNodeName === src.name || selectedNodeName === tgt.name;
+                      links.push(
+                        <line 
+                          key={`link-center-${i}`} 
+                          x1={src.cx} 
+                          y1={src.cy} 
+                          x2={tgt.cx} 
+                          y2={tgt.cy} 
+                          className={`link-line ${active ? 'active' : ''}`} 
+                        />
+                      );
+                    }
+                    
+                    // Add links based on related array if nodes exist
+                    for (let i = 1; i < nodesWithPositions.length; i++) {
+                      const node = nodesWithPositions[i];
+                      const related = Array.isArray(node.related) ? node.related : [];
+                      for (const relName of related) {
+                        const targetNode = nodesWithPositions.find(n => n.name.toLowerCase() === relName.toLowerCase());
+                        if (targetNode && targetNode.name !== nodesWithPositions[0].name && targetNode.name !== node.name) {
+                          const active = selectedNodeName === node.name || selectedNodeName === targetNode.name;
+                          links.push(
+                            <line 
+                              key={`link-${node.name}-${targetNode.name}`} 
+                              x1={node.cx} 
+                              y1={node.cy} 
+                              x2={targetNode.cx} 
+                              y2={targetNode.cy} 
+                              className={`link-line ${active ? 'active' : ''}`} 
+                            />
+                          );
+                        }
+                      }
+                    }
+                    return links;
+                  })()}
+
+                  {/* Nodes (Circles & Labels) */}
+                  {nodesWithPositions.map((node, index) => {
+                    const isSelected = selectedNodeName === node.name;
+                    const abbreviation = node.abbreviation || node.name.substring(0, 2).toUpperCase();
+                    
+                    return (
+                      <g key={node.name} onClick={() => setSelectedNodeName(node.name)} style={{ cursor: 'pointer' }}>
+                        {index === 0 && (
+                          <circle cx={node.cx} cy={node.cy} r={node.r + 8} fill="var(--primary-glow)" stroke="rgba(37, 99, 235, 0.4)" strokeWidth="1" />
+                        )}
+                        <circle 
+                          cx={node.cx} 
+                          cy={node.cy} 
+                          r={node.r} 
+                          fill={isSelected ? 'var(--primary)' : 'var(--bg-card)'} 
+                          stroke="var(--primary)" 
+                          strokeWidth={node.strokeWidth} 
+                          className="node-circle" 
+                          filter={isSelected ? 'url(#glow)' : ''} 
+                        />
+                        <text 
+                          x={node.cx} 
+                          y={node.cy + 4} 
+                          textAnchor="middle" 
+                          fill={isSelected ? '#ffffff' : 'var(--text-primary)'} 
+                          className="node-text"
+                          style={{ fontSize: index === 0 ? '11px' : '9px', fontWeight: 700 }}
+                        >
+                          {abbreviation}
+                        </text>
+                        
+                        {index === 0 ? (
+                          <>
+                            <rect x={node.cx - 70} y={node.cy + 36} width="140" height="24" rx="12" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1.5" />
+                            <text x={node.cx} y={node.cy + 52} textAnchor="middle" fill="var(--primary)" style={{ fontSize: '10px', fontWeight: 800 }}>{node.name}</text>
+                          </>
+                        ) : (
+                          <text x={node.cx} y={node.cy + 38} textAnchor="middle" fill="var(--text-secondary)" style={{ fontSize: '10px', fontWeight: 600 }}>{node.name}</text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              </svg>
+
+              {/* Floating Controller panel bottom left */}
+              <div className="graph-controls">
+                <button className="graph-control-btn" onClick={() => setZoomScale(prev => Math.min(prev + 0.1, 1.5))} title="Zoom In" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ZoomIn size={14} />
+                </button>
+                <button className="graph-control-btn" onClick={() => setZoomScale(prev => Math.max(prev - 0.1, 0.7))} title="Zoom Out" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ZoomOut size={14} />
+                </button>
+                <button className="graph-control-btn" onClick={() => { setZoomScale(1); if(nodesWithPositions[0]) setSelectedNodeName(nodesWithPositions[0].name); }} title="Reset Center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <RefreshCw size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Node details & insights inspector */}
+          <div className="graph-inspector-panel">
+            <div className="graph-inspector-header">
+              <h4>{selectedNode.badge}</h4>
+              <h3>{selectedNode.name}</h3>
+            </div>
+
+            <div className="graph-inspector-content" style={{ padding: '1.5rem', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div>
+                  <h5 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.4rem', letterSpacing: '0.05em' }}>Definition</h5>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                    {selectedNode.definition}
+                  </p>
+                </div>
+
+                {selectedNode.related && selectedNode.related.length > 0 && (
+                  <div>
+                    <h5 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem', letterSpacing: '0.05em' }}>Related Concepts</h5>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {selectedNode.related.map((rel, rIdx) => {
+                        const exists = nodesWithPositions.some(n => n.name === rel);
+                        return (
+                          <button 
+                            key={rIdx} 
+                            onClick={() => { if (exists) setSelectedNodeName(rel); }}
+                            className="concept-tag"
+                            style={{ opacity: exists ? 1 : 0.5, cursor: exists ? 'pointer' : 'default' }}
+                          >
+                            {rel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {selectedNode.studyTips && (
+                  <div>
+                    <h5 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.4rem', letterSpacing: '0.05em' }}>Study Tips</h5>
+                    <p style={{ fontSize: '0.82rem', fontStyle: 'italic', borderLeft: '2px solid var(--primary)', paddingLeft: '0.5rem', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
+                      {selectedNode.studyTips}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
   // RENDER: Main Workspace Dashboard (Logged In)
   return (
     <div className="app-wrapper">
@@ -963,10 +1346,7 @@ function App() {
               {userPlan === 'Free Tier' && (
                 <button 
                   onClick={(e) => {
-                    e.stopPropagation();
-                    setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
-                    setBillingError(null);
-                    setShowBillingModal(true);
+                    handleUpgradeClick(e);
                     setShowSidebarMenu(false);
                   }}
                   className="popover-item-btn"
@@ -1100,12 +1480,7 @@ function App() {
 
               {userPlan === 'Free Tier' ? (
                 <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
-                    setBillingError(null);
-                    setShowBillingModal(true);
-                  }}
+                  onClick={handleUpgradeClick}
                   style={{
                     width: 'auto',
                     padding: '0.35rem 0.75rem',
@@ -1470,6 +1845,99 @@ function App() {
               {/* Dashboard Right Side Column (Quick Access) */}
               <div className="dashboard-right">
                 <div className="section-title-row">
+                  <h3>Subscription & Usage</h3>
+                </div>
+
+                {/* Subscription & Usage Panel */}
+                <div className="quick-card" style={{ cursor: 'default', background: 'var(--bg-card)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                  <div className="quick-card-header" style={{ marginBottom: '0.75rem' }}>
+                    <span className="quick-badge" style={{ backgroundColor: 'rgba(180, 83, 9, 0.1)', color: 'var(--accent-amber)' }}>Usage Limits</span>
+                    <Sparkles size={14} style={{ color: 'var(--accent-amber)' }} />
+                  </div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: 600 }}>Subscription: {userPlan}</h4>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '1rem' }}>
+                    
+                    {/* Documents uploaded */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 500 }}>
+                        <span>Uploaded Materials</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{usageStats.materialsCount} / {userPlan === 'Free Tier' ? '3' : '100'}</span>
+                      </div>
+                      <div className="progress-bar-container" style={{ height: '5px', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${Math.min(100, (usageStats.materialsCount / (userPlan === 'Free Tier' ? 3 : 100)) * 100)}%`, 
+                          height: '100%', 
+                          backgroundColor: 'var(--primary)',
+                          borderRadius: '10px'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Storage used */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 500 }}>
+                        <span>Storage Used</span>
+                        <span style={{ color: 'var(--text-muted)' }}>
+                          {formatBytes(usageStats.storageBytes)} / {userPlan === 'Free Tier' ? '100 MB' : '5 GB'}
+                        </span>
+                      </div>
+                      <div className="progress-bar-container" style={{ height: '5px', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${Math.min(100, (usageStats.storageBytes / (userPlan === 'Free Tier' ? 100 * 1024 * 1024 : 5 * 1024 * 1024 * 1024)) * 100)}%`, 
+                          height: '100%', 
+                          backgroundColor: '#10b981',
+                          borderRadius: '10px'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* AI Questions used */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 500 }}>
+                        <span>AI Questions</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{usageStats.aiQuestionsUsed} / {userPlan === 'Free Tier' ? '20' : '500'}</span>
+                      </div>
+                      <div className="progress-bar-container" style={{ height: '5px', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${Math.min(100, (usageStats.aiQuestionsUsed / (userPlan === 'Free Tier' ? 20 : 500)) * 100)}%`, 
+                          height: '100%', 
+                          backgroundColor: '#6366f1',
+                          borderRadius: '10px'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Quizzes generated */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 500 }}>
+                        <span>Quizzes Generated</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{usageStats.quizzesUsed} / {userPlan === 'Free Tier' ? '3' : '100'}</span>
+                      </div>
+                      <div className="progress-bar-container" style={{ height: '5px', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${Math.min(100, (usageStats.quizzesUsed / (userPlan === 'Free Tier' ? 3 : 100)) * 100)}%`, 
+                          height: '100%', 
+                          backgroundColor: '#ec4899',
+                          borderRadius: '10px'
+                        }} />
+                      </div>
+                    </div>
+
+                  </div>
+                  
+                  {userPlan === 'Free Tier' && (
+                    <button 
+                      onClick={() => setActiveView('settings')}
+                      className="action-btn-primary" 
+                      style={{ marginTop: '1.25rem', width: '100%', fontSize: '0.75rem', padding: '0.45rem 1rem' }}
+                    >
+                      Upgrade to Premium
+                    </button>
+                  )}
+                </div>
+
+                <div className="section-title-row" style={{ marginTop: '1rem' }}>
                   <h3>Quick Access</h3>
                 </div>
 
@@ -2198,13 +2666,7 @@ function App() {
                         <li><CheckCircle2 size={12} className="feature-check-icon" /> Interactive SVG Concept Graphs</li>
                       </ul>
                       <button 
-                        onClick={() => {
-                          if (userPlan === 'Free Tier') {
-                            setBillingForm({ number: '', name: '', expiry: '', cvv: '' });
-                            setBillingError(null);
-                            setShowBillingModal(true);
-                          }
-                        }} 
+                        onClick={handleUpgradeClick} 
                         className="action-btn-primary" 
                         disabled={userPlan !== 'Free Tier' && !userPlan.includes('Promo')}
                         style={{ marginTop: 'auto' }}
@@ -2224,22 +2686,37 @@ function App() {
                       </div>
                     </div>
                     <button 
-                      onClick={() => {
-                        if (userPlan.includes('Promo')) {
-                          alert('You have already claimed this student offer!');
+                      onClick={async () => {
+                        if (userPlan.includes('Promo') || userPlan === 'Premium Plan') {
+                          alert('You have already claimed this student offer or have Premium!');
                           return;
                         }
                         const email = user ? user.email : '';
                         if (email.endsWith('.edu') || email.includes('gmail.com') || window.confirm('Verify student email to continue?')) {
-                          setUserPlan('University Premium (Promo: 3 Months Free)');
-                          
-                          setNotifications(prev => [
-                            { id: Date.now(), text: '🎓 Student offer claimed successfully! You unlocked 3 months of Premium.', time: 'Just now' },
-                            ...prev
-                          ]);
-                          setUnreadNotifications(true);
-                          
-                          alert('Verification Successful! You unlocked 3 months of free Premium Plan.');
+                          try {
+                            const res = await fetch(`${API_BASE_URL}/api/billing/claim-student-promo`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                              }
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error || 'Failed to claim student offer.');
+                            
+                            setUserPlan('University Premium (Promo: 3 Months Free)');
+                            
+                            setNotifications(prev => [
+                              { id: Date.now(), text: '🎓 Student offer claimed successfully! You unlocked 3 months of Premium.', time: 'Just now' },
+                              ...prev
+                            ]);
+                            setUnreadNotifications(true);
+                            
+                            alert('Verification Successful! You unlocked 3 months of free Premium Plan.');
+                            fetchBillingStatus();
+                          } catch (err) {
+                            alert(err.message);
+                          }
                         }
                       }}
                       className="action-btn-primary"
@@ -2439,6 +2916,73 @@ function App() {
                   return;
                 }
 
+                // Check if card is a known test card or has obvious dummy/repeating patterns
+                const knownTestCards = [
+                  "4242424242424242",
+                  "4000000000003210",
+                  "4222222222222222",
+                  "4105555555555555",
+                  "4000002500003155",
+                  "4111111111111111",
+                  "5555555555554444",
+                  "5555555555551111",
+                  "5252525252525252",
+                  "378282246300005",
+                  "378282246310005",
+                  "371449635398431",
+                  "30569309025904",
+                  "3528000000000000",
+                  "3530111122223333",
+                  "6011111111111117",
+                  "4917610000000000",
+                  "5454545454545454",
+                  "5105105105105100",
+                  "4012888888881881"
+                ];
+
+                const hasRepeatingPatterns = (str) => {
+                  // All identical digits
+                  if (/^(\d)\1+$/.test(str)) return true;
+                  
+                  // Repeating 2-digit patterns (e.g. 42424242...)
+                  if (str.length >= 8) {
+                    const doublePattern = str.substring(0, 2);
+                    let isRepeatingDouble = true;
+                    for (let i = 0; i < str.length; i += 2) {
+                      if (str.substring(i, i + 2) !== doublePattern && str.substring(i, i + 2).length === 2) {
+                        isRepeatingDouble = false;
+                        break;
+                      }
+                    }
+                    if (isRepeatingDouble) return true;
+                  }
+                  
+                  // Repeating 4-digit patterns (e.g. 12341234...)
+                  if (str.length >= 12) {
+                    const quadPattern = str.substring(0, 4);
+                    let isRepeatingQuad = true;
+                    for (let i = 0; i < str.length; i += 4) {
+                      if (str.substring(i, i + 4) !== quadPattern && str.substring(i, i + 4).length === 4) {
+                        isRepeatingQuad = false;
+                        break;
+                      }
+                    }
+                    if (isRepeatingQuad) return true;
+                  }
+                  
+                  // Sequential patterns
+                  const sequential = "12345678901234567890";
+                  const reverseSequential = "98765432109876543210";
+                  if (sequential.includes(str) || reverseSequential.includes(str)) return true;
+                  
+                  return false;
+                };
+
+                if (knownTestCards.includes(digits) || hasRepeatingPatterns(digits)) {
+                  setBillingError('Test/mock credit cards are not allowed. Please use a real-world card.');
+                  return;
+                }
+
                 let sum = 0;
                 let shouldDouble = false;
                 for (let i = digits.length - 1; i >= 0; i--) {
@@ -2457,9 +3001,23 @@ function App() {
                 }
                 
                 setBillingLoading(true);
-                // Simulate secure transaction checkout delay
-                setTimeout(() => {
-                  setBillingLoading(false);
+                try {
+                  const res = await fetch(`${API_BASE_URL}/api/billing/mock-checkout`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                      name: billingForm.name,
+                      number: billingForm.number,
+                      expiry: billingForm.expiry,
+                      cvv: billingForm.cvv
+                    })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || 'Payment processing failed.');
+
                   setUserPlan('Premium Plan');
                   setShowBillingModal(false);
                   
@@ -2471,7 +3029,12 @@ function App() {
                   setUnreadNotifications(true);
                   
                   alert('Payment Successful! Thank you for subscribing to OmniStudy Premium.');
-                }, 1800);
+                } catch (err) {
+                  console.error(err);
+                  setBillingError(err.message);
+                } finally {
+                  setBillingLoading(false);
+                }
               }}
               style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
             >
@@ -2604,7 +3167,7 @@ function App() {
                           {qIndex + 1}. {q.question}
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {q.options.map((opt, optIndex) => {
+                          {q.options && q.options.map((opt, optIndex) => {
                             const isSelected = quizAnswers[qIndex] === optIndex;
                             const isCorrect = q.answerIndex === optIndex;
                             const showResults = quizSubmitted;
@@ -2712,6 +3275,120 @@ function App() {
                 </>
               )}
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 5. Share Graph Modal Overlay */}
+      {showShareModal && (
+        <div className="modal-overlay" onClick={() => setShowShareModal(false)} style={{ zIndex: 300 }}>
+          <div className="billing-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', width: '90%', padding: '1.75rem' }}>
+            
+            <div className="modal-header-row" style={{ marginBottom: '1.25rem' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <Share2 size={20} style={{ color: 'var(--primary)' }} />
+                Share Knowledge Graph
+              </h3>
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="header-icon-btn"
+                style={{ fontSize: '1.25rem', border: 'none', background: 'none', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.4' }}>
+              Share your study concepts map from <strong>{systemStatus.filename || 'Lecture Material'}</strong> with your friends or study groups!
+            </p>
+
+            {/* Quick URL Input Copy Panel */}
+            {(() => {
+              const sharedUrl = `${window.location.origin}/?shared_graph_id=${systemStatus.materialId || ''}`;
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={sharedUrl} 
+                      style={{
+                        flex: 1,
+                        padding: '0.55rem 0.75rem',
+                        fontSize: '0.78rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-secondary)'
+                      }}
+                    />
+                    <button 
+                      onClick={() => {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                          navigator.clipboard.writeText(sharedUrl).then(() => alert('Link copied!'));
+                        } else {
+                          fallbackCopyText(sharedUrl);
+                        }
+                      }}
+                      className="action-btn-primary"
+                      style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.78rem' }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+
+                  {/* Social Share Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    
+                    {/* WhatsApp */}
+                    <a 
+                      href={`https://api.whatsapp.com/send?text=${encodeURIComponent('Check out this interactive study concepts graph on OmniStudy AI: ' + sharedUrl)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-utility"
+                      style={{ justifyContent: 'center', padding: '0.65rem', border: '1px solid #25d366', color: '#25d366', textDecoration: 'none' }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>WhatsApp</span>
+                    </a>
+
+                    {/* Twitter / X */}
+                    <a 
+                      href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(sharedUrl)}&text=${encodeURIComponent('Mastering my lecture materials with this concepts network on OmniStudy AI!')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-utility"
+                      style={{ justifyContent: 'center', padding: '0.65rem', border: '1px solid #1da1f2', color: '#1da1f2', textDecoration: 'none' }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Twitter / X</span>
+                    </a>
+
+                    {/* Facebook */}
+                    <a 
+                      href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(sharedUrl)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-utility"
+                      style={{ justifyContent: 'center', padding: '0.65rem', border: '1px solid #1877f2', color: '#1877f2', textDecoration: 'none' }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Facebook</span>
+                    </a>
+
+                    {/* LinkedIn */}
+                    <a 
+                      href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(sharedUrl)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-utility"
+                      style={{ justifyContent: 'center', padding: '0.65rem', border: '1px solid #0a66c2', color: '#0a66c2', textDecoration: 'none' }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>LinkedIn</span>
+                    </a>
+
+                  </div>
+                </>
+              );
+            })()}
 
           </div>
         </div>
