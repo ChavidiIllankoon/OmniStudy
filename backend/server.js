@@ -653,6 +653,20 @@ app.get('/api/status', authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint: Fetch materials uploaded by user (Protected)
+app.get('/api/materials', authenticateToken, async (req, res) => {
+  try {
+    const materialsRes = await pool.query(
+      'SELECT id, filename, file_size as "fileSize", uploaded_at as "uploadedAt" FROM materials WHERE user_id = $1 ORDER BY id DESC',
+      [req.user.id]
+    );
+    res.json({ materials: materialsRes.rows });
+  } catch (err) {
+    console.error("Error fetching user materials:", err);
+    res.status(500).json({ error: 'Failed to retrieve materials.' });
+  }
+});
+
 // Endpoint: Fetch concepts for active document (Protected)
 app.get('/api/concepts', authenticateToken, async (req, res) => {
   try {

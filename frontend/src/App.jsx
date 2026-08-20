@@ -162,17 +162,11 @@ function App() {
 
   // Notifications List
   const [notifications, setNotifications] = useState([
-    { id: 1, text: 'Machine Learning - Lecture 01.pdf has been successfully indexed.', time: 'Just now' },
-    { id: 2, text: 'New concept node map built for your workspace.', time: '5 mins ago' },
-    { id: 3, text: 'Account registered successfully. Welcome to OmniStudy!', time: '10 mins ago' }
+    { id: 1, text: 'Account registered successfully. Welcome to OmniStudy!', time: 'Just now' }
   ]);
 
   // Materials Array
-  const [materialsList, setMaterialsList] = useState([
-    { id: '1', title: 'Machine Learning - Lecture 01.pdf', type: 'PDF', time: '2 days ago', badge: 'PDF' },
-    { id: '2', title: 'Data Structures - Trees.pdf', type: 'PDF', time: '5 days ago', badge: 'PDF' },
-    { id: '3', title: 'Software Engineering - Agile.pdf', type: 'PDF', time: '1 week ago', badge: 'PDF' }
-  ]);
+  const [materialsList, setMaterialsList] = useState([]);
 
   const getVisibleMaterials = () => {
     let list = [...materialsList];
@@ -200,6 +194,7 @@ function App() {
   useEffect(() => {
     if (token) {
       fetchStatus();
+      fetchMaterials();
     }
     
     const params = new URLSearchParams(window.location.search);
@@ -217,6 +212,7 @@ function App() {
       
       if (token) {
         fetchStatus();
+        fetchMaterials();
       }
     } else if (params.get('billing_cancel') || dodoStatus === 'failed') {
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -268,6 +264,7 @@ function App() {
     setUser(null);
     setMessages([]);
     setSources([]);
+    setMaterialsList([]);
     setError(null);
     setAuthError(null);
     setActiveView('dashboard');
@@ -363,6 +360,28 @@ function App() {
       }
     } catch (err) {
       console.error("Failed to fetch billing status:", err);
+    }
+  };
+
+  const fetchMaterials = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/materials`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const formatted = (data.materials || []).map(m => ({
+          id: m.id.toString(),
+          title: m.filename,
+          type: 'PDF',
+          time: new Date(m.uploadedAt).toLocaleDateString() || 'Recently',
+          badge: 'PDF'
+        }));
+        setMaterialsList(formatted);
+      }
+    } catch (err) {
+      console.error("Failed to fetch materials:", err);
     }
   };
 
@@ -519,6 +538,8 @@ function App() {
           chunkCount: data.chunkCount,
           apiKeyConfigured: true
         });
+
+        fetchMaterials();
 
         // Add real-time notification
         setNotifications(prev => [
@@ -2361,7 +2382,7 @@ function App() {
           )}
 
           {/* VIEW: Knowledge Graph (SVG Canvas Node explorer) */}
-          {activeView === 'graph' && (
+          {activeView === 'graph' && systemStatus.hasDocument && (
             <div className="graph-view-grid">
               
               {/* Left Column: Interactive Graph Map */}
@@ -2572,6 +2593,49 @@ function App() {
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {activeView === 'graph' && !systemStatus.hasDocument && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 'calc(100vh - 170px)',
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '16px',
+              padding: '3rem',
+              textAlign: 'center',
+              boxShadow: 'var(--shadow-sm)'
+            }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--primary-glow)',
+                color: 'var(--primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '1.5rem'
+              }}>
+                <Sparkles size={32} />
+              </div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                No Active Document Loaded
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+                Please upload a lecture document (PDF) on the Dashboard or My Materials tab to generate your interactive concept graph map automatically.
+              </p>
+              <button 
+                onClick={() => setActiveView('dashboard')} 
+                className="action-btn-primary"
+                style={{ width: 'auto', padding: '0.6rem 1.5rem', fontSize: '0.82rem' }}
+              >
+                Go to Dashboard
+              </button>
             </div>
           )}
 
